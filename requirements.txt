@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-multipart
+torch
+torchaudio
+openai-whisper
+sentence_transformers
+google-generativeai
+chromadb
+TTS
+numpy
+speechbrain
+transformers
+grpcio
+grpcio-tools
+openai
+nvidia-audio2face-3d

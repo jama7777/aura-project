@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA - Virtual Friend</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <!-- Face API -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="ui-overlay">
+        <div id="status-bar">
+            <div class="status-item">
+                <span id="connection-status" class="status-dot online"></span>
+                <span>AURA Online</span>
+            </div>
+            <div class="status-item">
+                <span>Emotion: </span>
+                <span id="current-emotion">Neutral</span>
+            </div>
+        </div>
+
+        <div id="chat-container">
+            <div id="chat-history">
+                <!-- Messages will appear here -->
+            </div>
+        </div>
+
+        <div id="controls">
+            <button id="camera-btn" class="control-btn" title="Toggle Camera">
+                📷
+            </button>
+            <div class="input-wrapper">
+                <input type="text" id="text-input" placeholder="Type a message..." autocomplete="off">
+                <button id="send-btn" class="control-btn">➤</button>
+            </div>
+            <div class="gesture-control-wrapper" style="position: relative;">
+                <button id="gesture-btn" class="control-btn" title="Send Gesture">
+                    👋
+                </button>
+                <input type="file" id="character-upload" accept=".glb,.gltf,.fbx,.obj" style="display: none;">
+                <button id="upload-char-btn" class="control-btn" title="Upload Character"
+                    onclick="document.getElementById('character-upload').click()">
+                    👤
+                </button>
+                <div id="gesture-menu" class="hidden"
+                    style="position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border-radius: 8px; padding: 5px; display: flex; flex-direction: column; gap: 5px; width: 120px;">
+                    <button class="gesture-option-btn" data-gesture="wave">👋 Wave</button>
+                    <button class="gesture-option-btn" data-gesture="thumbs_up">👍 Thumbs Up</button>
+                    <button class="gesture-option-btn" data-gesture="victory">✌️ Victory</button>
+                    <button class="gesture-option-btn" data-gesture="clap">👏 Clap</button>
+                    <button class="gesture-option-btn" data-gesture="dance">💃 Dance</button>
+                    <button class="gesture-option-btn" data-gesture="hug">🫂 Hug</button>
+                </div>
+            </div>
+            <!-- Microphone Button for Voice Input -->
+            <button id="mic-btn" class="control-btn" title="Click to Talk">
+                🎤
+            </button>
+        </div>
+
+        <video id="user-camera" autoplay playsinline muted class="hidden"></video>
+
+        <!-- Audio Player for Playback of Recorded Audio -->
+        <div id="audio-playback-container"
+            style="position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; display: none;">
+            <p style="color: white; margin: 0 0 10px 0; text-align: center;">🎤 Your Recording:</p>
+            <audio id="recorded-audio" controls style="width: 300px;"></audio>
+        </div>
+    </div>
+
+    <script type="module" src="/static/js/main.js?v=13"></script>
+</body>
+
+</html>

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA Architecture Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #1a1a3e 50%, #24243e 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: white;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .title {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .title p {
+            color: #888;
+            font-size: 1.1rem;
+        }
+
+        /* Section Styles */
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .section-label {
+            position: absolute;
+            top: -12px;
+            left: 20px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Frontend Section */
+        .frontend-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .input-box {
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid rgba(102, 126, 234, 0.4);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .input-box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .input-box .icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .input-box .label {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        .input-box .tech {
+            font-size: 0.7rem;
+            color: #667eea;
+            margin-top: 5px;
+        }
+
+        /* Arrow */
+        .arrow-container {
+            display: flex;
+            justify-content: center;
+            padding: 15px 0;
+        }
+
+        .arrow {
+            width: 4px;
+            height: 40px;
+            background: linear-gradient(180deg, #667eea, #764ba2);
+            position: relative;
+        }
+
+        .arrow::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 15px solid #764ba2;
+        }
+
+        .arrow-label {
+            color: #888;
+            font-size: 0.75rem;
+            margin-left: 15px;
+            align-self: center;
+        }
+
+        /* Server Section */
+        .server-box {
+            background: linear-gradient(135deg, rgba(118, 75, 162, 0.3), rgba(102, 126, 234, 0.3));
+            border: 2px solid rgba(118, 75, 162, 0.5);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        .server-box h3 {
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+        }
+
+        .server-box .tech {
+            color: #f093fb;
+            font-size: 0.9rem;
+        }
+
+        /* Processing Modules */
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .module {
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .module:hover {
+            transform: translateY(-5px);
+        }
+
+        .module.whisper {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.2), rgba(34, 197, 94, 0.2));
+            border: 1px solid rgba(74, 222, 128, 0.4);
+        }
+
+        .module.brain {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.2));
+            border: 1px solid rgba(251, 191, 36, 0.4);
+        }
+
+        .module.tts {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
+            border: 1px solid rgba(59, 130, 246, 0.4);
+        }
+
+        .module.nvidia {
+            background: linear-gradient(135deg, rgba(118, 185, 0, 0.2), rgba(96, 165, 0, 0.2));
+            border: 1px solid rgba(118, 185, 0, 0.4);
+        }
+
+        .module .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .module h4 {
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+
+        .module .desc {
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        /* Output Section */
+        .output-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .output-box {
+            background: rgba(240, 147, 251, 0.15);
+            border: 1px solid rgba(240, 147, 251, 0.4);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .output-box .icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        /* Flow Diagram Text */
+        .flow-text {
+            text-align: center;
+            color: #667eea;
+            font-size: 0.85rem;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .flow-text span {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 5px 12px;
+            border-radius: 20px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #555;
+            font-size: 0.8rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+
+            .frontend-grid,
+            .modules-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .output-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Title -->
+        <div class="title">
+            <h1>🤖 AURA Architecture</h1>
+            <p>Autonomous Universal Responsive Assistant</p>
+        </div>
+
+        <!-- Frontend Section -->
+        <div class="section">
+            <div class="section-label">🌐 Browser (Frontend)</div>
+            <div class="frontend-grid">
+                <div class="input-box">
+                    <div class="icon">🎤</div>
+                    <div class="label">Voice Input</div>
+                    <div class="tech">Web Audio API</div>
+                </div>
+                <div class="input-box">
+                    <div class="icon">📷</div>
+                    <div class="label">Camera</div>
+                    <div class="tech">Face-API / MediaPipe</div>
+                </div>
+                <div class="input-box">
+                    <div class="icon">⌨️</div>
+                    <div class="label">Text Input</div>
+                    <div class="tech">Chat Interface</div>
+                </div>
+                <div class="input-box">
+                    <div class="icon">🧍</div>
+                    <div class="label">3D Avatar</div>
+                    <div class="tech">Three.js + GLB</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arrow Down -->
+        <div class="arrow-container">
+            <div class="arrow"></div>
+            <div class="arrow-label">HTTP Request (POST /api/chat)</div>
+        </div>
+
+        <!-- Server Section -->
+        <div class="section">
+            <div class="section-label">⚙️ Server (Backend)</div>
+            <div class="server-box">
+                <h3>🖥️ FastAPI Server</h3>
+                <div class="tech">Python • Uvicorn • REST API</div>
+            </div>
+        </div>
+
+        <!-- Arrow Down -->
+        <div class="arrow-container">
+            <div class="arrow"></div>
+            <div class="arrow-label">Process Input → Generate Response</div>
+        </div>
+
+        <!-- Processing Modules -->
+        <div class="section">
+            <div class="section-label">🔧 Processing Modules</div>
+            <div class="modules-grid">
+                <div class="module whisper">
+                    <div class="icon">🎧</div>
+                    <h4>Whisper</h4>
+                    <div class="desc">Speech → Text</div>
+                </div>
+                <div class="module brain">
+                    <div class="icon">🧠</div>
+                    <h4>AI Brain</h4>
+                    <div class="desc">GPT / Gemini + ChromaDB</div>
+                </div>
+                <div class="module tts">
+                    <div class="icon">🔊</div>
+                    <h4>Coqui TTS</h4>
+                    <div class="desc">Text → Speech</div>
+                </div>
+                <div class="module nvidia">
+                    <div class="icon">👄</div>
+                    <h4>NVIDIA ACE</h4>
+                    <div class="desc">Audio → Lip Sync</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arrow Down -->
+        <div class="arrow-container">
+            <div class="arrow"></div>
+            <div class="arrow-label">JSON Response (text, audio, blendshapes)</div>
+        </div>
+
+        <!-- Output Section -->
+        <div class="section">
+            <div class="section-label">📤 Output to Browser</div>
+            <div class="output-grid">
+                <div class="output-box">
+                    <div class="icon">💬</div>
+                    <div class="label">Chat Message</div>
+                </div>
+                <div class="output-box">
+                    <div class="icon">🔉</div>
+                    <div class="label">Voice Audio</div>
+                </div>
+                <div class="output-box">
+                    <div class="icon">😊</div>
+                    <div class="label">Face Animation (52 Blendshapes)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flow Summary -->
+        <div class="flow-text">
+            <span>🎤 You Speak</span>
+            →
+            <span>📝 Transcribed</span>
+            →
+            <span>🧠 AI Thinks</span>
+            →
+            <span>🗣️ Voice Created</span>
+            →
+            <span>👄 Lips Move</span>
+            →
+            <span>🧍 Avatar Responds</span>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            AURA Project Architecture Diagram • Created January 2026
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA - Gesture Animation Studio</title>
+    <!-- Three.js (same CDN as main AURA app) -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <link rel="stylesheet" href="/static/css/gesture_studio.css">
+</head>
+
+<body>
+    <div class="studio-container">
+        <!-- Header -->
+        <header class="studio-header">
+            <div class="logo">
+                <h1>🎬 AURA Gesture Studio</h1>
+                <p>Body Animation Sequencer & Preview Tool</p>
+            </div>
+            <div class="header-controls">
+                <button id="save-sequence" class="btn-primary">
+                    <span>💾</span> Save Sequence
+                </button>
+                <button id="load-sequence" class="btn-secondary">
+                    <span>📂</span> Load Sequence
+                </button>
+                <button id="export-sequence" class="btn-success">
+                    <span>⬇️</span> Export
+                </button>
+            </div>
+        </header>
+
+        <div class="studio-main">
+            <!-- Left panel: Animation Library -->
+            <aside class="library-panel">
+                <div class="panel-header">
+                    <h2>🎭 Animation Library</h2>
+                    <button id="upload-anim" class="btn-small-accent" title="Upload FBX from Mixamo">
+                        ➕ Upload FBX
+                    </button>
+                </div>
+
+                <!-- Available Animations -->
+                <div class="anim-list" id="anim-list">
+                    <div class="loading-state">⏳ Loading animations...</div>
+                </div>
+
+                <!-- Upload info -->
+                <div class="upload-tip">
+                    <p>💡 Get free animations from <a href="https://www.mixamo.com" target="_blank">Mixamo.com</a></p>
+                    <p>Select your character → pick animation → download as FBX</p>
+                </div>
+
+                <!-- Emotion Mapping -->
+                <div class="emotion-map-section">
+                    <h3>🎯 Emotion → Gesture Map</h3>
+                    <div id="emotion-map-list" class="emotion-map-list"></div>
+                </div>
+            </aside>
+
+            <!-- Center: 3D Preview -->
+            <section class="preview-section">
+                <div class="preview-header">
+                    <h2>Live Preview</h2>
+                    <div class="preview-controls">
+                        <button id="reset-camera" class="btn-icon" title="Reset Camera">📷</button>
+                        <button id="toggle-grid" class="btn-icon active" title="Toggle Grid">⊞</button>
+                        <button id="toggle-wireframe" class="btn-icon" title="Toggle Wireframe">🔲</button>
+                    </div>
+                </div>
+                <div id="canvas-container" class="canvas-container"></div>
+
+                <!-- Now Playing Bar -->
+                <div class="now-playing" id="now-playing">
+                    <div class="now-playing-info">
+                        <span class="now-label">Now Playing:</span>
+                        <span class="now-name" id="now-playing-name">Idle</span>
+                    </div>
+                    <div class="now-playing-controls">
+                        <button id="anim-speed-down" class="btn-icon-small" title="Slower">🐢</button>
+                        <span id="anim-speed" class="speed-label">1.0x</span>
+                        <button id="anim-speed-up" class="btn-icon-small" title="Faster">🐇</button>
+                        <label class="loop-toggle">
+                            <input type="checkbox" id="single-loop" checked> Loop
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right panel: Sequence Builder -->
+            <aside class="sequence-panel">
+                <div class="panel-header">
+                    <h2>📋 Sequence Builder</h2>
+                    <button id="clear-sequence" class="btn-small-danger">Clear All</button>
+                </div>
+
+                <!-- Sequence Playback -->
+                <div class="sequence-playback">
+                    <button id="play-sequence" class="btn-play">▶️ Play Sequence</button>
+                    <button id="stop-sequence" class="btn-stop">⏹️ Stop</button>
+                </div>
+
+                <div class="sequence-info">
+                    <span>Total: <strong id="seq-total-items">0</strong> gestures</span>
+                    <span>Duration: <strong id="seq-total-time">0.0s</strong></span>
+                </div>
+
+                <!-- Sequence Timeline -->
+                <div class="sequence-timeline" id="sequence-timeline">
+                    <div class="empty-state">
+                        <p>No gestures in sequence</p>
+                        <small>Click animations from the library to add them here</small>
+                    </div>
+                </div>
+
+                <!-- Sequence Settings -->
+                <div class="sequence-settings">
+                    <h3>⚙️ Settings</h3>
+                    <div class="setting-row">
+                        <label>Crossfade Duration:</label>
+                        <div class="value-control">
+                            <input type="range" id="crossfade-slider" min="0" max="2" step="0.1" value="0.5">
+                            <span id="crossfade-value">0.5s</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <label>Loop Sequence:</label>
+                        <input type="checkbox" id="loop-sequence">
+                    </div>
+                    <div class="setting-row">
+                        <label>Auto-Return to Idle:</label>
+                        <input type="checkbox" id="auto-idle" checked>
+                    </div>
+                </div>
+
+                <!-- Quick Trigger Test -->
+                <div class="quick-test">
+                    <h3>🧪 Quick Emotion Test</h3>
+                    <p class="test-hint">Click to trigger gesture for that emotion:</p>
+                    <div class="emotion-buttons" id="emotion-test-buttons">
+                        <button class="emotion-btn" data-emotion="happy">😊 Happy</button>
+                        <button class="emotion-btn" data-emotion="sad">😢 Sad</button>
+                        <button class="emotion-btn" data-emotion="angry">😠 Angry</button>
+                        <button class="emotion-btn" data-emotion="surprised">😲 Surprised</button>
+                        <button class="emotion-btn" data-emotion="love">❤️ Love</button>
+                        <button class="emotion-btn" data-emotion="grateful">🙏 Grateful</button>
+                        <button class="emotion-btn" data-emotion="excited">🎉 Excited</button>
+                        <button class="emotion-btn" data-emotion="neutral">😐 Neutral</button>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Bottom Status -->
+        <footer class="status-bar">
+            <div class="status-left">
+                <span id="avatar-status">⏳ Loading avatar...</span>
+                <span id="anim-count">0 animations loaded</span>
+            </div>
+            <div class="status-right">
+                <span id="studio-status">Ready</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Hidden inputs -->
+    <input type="file" id="file-input" accept=".json" style="display:none;">
+    <input type="file" id="fbx-upload" accept=".fbx" style="display:none;">
+
+    <script type="module" src="/static/js/gesture_studio.js"></script>
+</body>
+
+</html>

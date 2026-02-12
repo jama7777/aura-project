@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            width: 250px;
+            padding: 15px;
+            font-family: sans-serif;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #a29bfe;
+        }
+
+        .status {
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        /* Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #444;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: #6c5ce7;
+        }
+
+        input:checked+.slider:before {
+            -webkit-transform: translateX(26px);
+            -ms-transform: translateX(26px);
+            transform: translateX(26px);
+        }
+
+        .note {
+            font-size: 11px;
+            color: #aaa;
+        }
+
+        a {
+            color: #a29bfe;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>AURA Connector</h2>
+
+    <div class="toggle-container">
+        <span>Enable Integration</span>
+        <label class="switch">
+            <input type="checkbox" id="toggle">
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="status" id="status">Status: Ready</div>
+
+    <p class="note">
+        Ensure AURA is running at <br>
+        <a href="http://localhost:8000" target="_blank">http://localhost:8000</a>
+    </p>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
