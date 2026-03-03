@@ -61,12 +61,8 @@ export class GestureHandler {
     }
 
     log(msg) {
-        console.log(msg);
-        const debugDiv = document.getElementById('debug-console');
-        if (debugDiv) {
-            debugDiv.innerHTML += `<div>[Gesture] ${msg}</div>`;
-            debugDiv.scrollTop = debugDiv.scrollHeight;
-        }
+        // Debug only — goes to browser DevTools (F12), never to visible UI
+        console.log('[Gesture]', msg);
     }
 
     onResults(results) {

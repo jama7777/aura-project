@@ -24,29 +24,11 @@ export class Avatar {
     }
 
     log(msg) {
-        console.log(msg);
-        if (this.debugDiv) {
-            this.debugDiv.innerHTML += `<div>${msg}</div>`;
-            this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
-        }
+        // Debug only — goes to browser DevTools (F12), never to visible UI
+        console.log('[Avatar]', msg);
     }
 
     init() {
-        // Create Debug UI
-        this.debugDiv = document.createElement('div');
-        this.debugDiv.id = 'debug-console'; // Added ID for testing
-        this.debugDiv.style.position = 'absolute';
-        this.debugDiv.style.top = '10px';
-        this.debugDiv.style.left = '10px';
-        this.debugDiv.style.color = 'yellow';
-        this.debugDiv.style.fontFamily = 'monospace';
-        this.debugDiv.style.zIndex = '1000';
-        this.debugDiv.style.background = 'rgba(0,0,0,0.5)';
-        this.debugDiv.style.padding = '10px';
-        this.debugDiv.style.maxHeight = '200px';
-        this.debugDiv.style.overflowY = 'auto';
-        document.body.appendChild(this.debugDiv);
-
         this.log("Initializing 3D Scene...");
 
         const container = document.getElementById('canvas-container');

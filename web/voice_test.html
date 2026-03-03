@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA — Voice Emotion Test Lab</title>
+    <meta name="description" content="Test voice command input and audio emotion detection for the AURA AI system">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a12;
+            --bg-card: #12121e;
+            --bg-card-hover: #1a1a2e;
+            --accent: #7c3aed;
+            --accent-glow: rgba(124, 58, 237, 0.4);
+            --accent-2: #06b6d4;
+            --green: #10b981;
+            --red: #ef4444;
+            --orange: #f59e0b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(124, 58, 237, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(124, 58, 237, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+        }
+
+        .page-header {
+            text-align: center;
+            padding: 48px 24px 32px;
+            position: relative;
+        }
+
+        .page-header .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(124, 58, 237, 0.15);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 100px;
+            padding: 4px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #a78bfa;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+        }
+
+        .page-header h1 {
+            font-size: clamp(28px, 5vw, 48px);
+            font-weight: 700;
+            background: linear-gradient(135deg, #f1f5f9 0%, #a78bfa 50%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+        }
+
+        .page-header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 480px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .back-link {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--text-primary);
+        }
+
+        .main-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px 60px;
+            display: grid;
+            gap: 24px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(124, 58, 237, 0.2);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ===== MIC BUTTON ===== */
+        .mic-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .mic-outer-ring {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mic-pulse-ring {
+            position: absolute;
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .mic-outer-ring.recording .mic-pulse-ring {
+            animation: pulse-ring 1.5s ease-out infinite;
+        }
+
+        .mic-outer-ring.recording .mic-pulse-ring:nth-child(2) {
+            animation-delay: 0.5s;
+        }
+
+        .mic-outer-ring.recording .mic-pulse-ring:nth-child(3) {
+            animation-delay: 1s;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                opacity: 0.6;
+            }
+
+            100% {
+                transform: scale(1.8);
+                opacity: 0;
+            }
+        }
+
+        .mic-btn {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(135deg, var(--accent), #5b21b6);
+            color: white;
+            box-shadow: 0 8px 32px var(--accent-glow), 0 0 0 3px rgba(124, 58, 237, 0.2);
+        }
+
+        .mic-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 12px 40px var(--accent-glow), 0 0 0 4px rgba(124, 58, 237, 0.3);
+        }
+
+        .mic-btn.recording {
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            box-shadow: 0 8px 32px rgba(239, 68, 68, 0.4), 0 0 0 3px rgba(239, 68, 68, 0.2);
+            animation: mic-glow 1s ease-in-out infinite alternate;
+        }
+
+        @keyframes mic-glow {
+            from {
+                box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3), 0 0 0 3px rgba(239, 68, 68, 0.1);
+            }
+
+            to {
+                box-shadow: 0 8px 48px rgba(239, 68, 68, 0.6), 0 0 0 6px rgba(239, 68, 68, 0.2);
+            }
+        }
+
+        .mic-btn svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+            transition: transform 0.3s;
+        }
+
+        .mic-btn:hover svg {
+            transform: scale(1.1);
+        }
+
+        .mic-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ===== WAVEFORM ===== */
+        .waveform-container {
+            width: 100%;
+            height: 80px;
+            position: relative;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        #waveform-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .waveform-label {
+            position: absolute;
+            top: 8px;
+            left: 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ===== STATUS ===== */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.3);
+            transition: all 0.3s;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            transition: background 0.3s;
+        }
+
+        .status-pill.idle .status-dot {
+            background: var(--text-secondary);
+        }
+
+        .status-pill.recording .status-dot {
+            background: #ef4444;
+            animation: blink 1s infinite;
+        }
+
+        .status-pill.processing .status-dot {
+            background: #f59e0b;
+            animation: blink 0.5s infinite;
+        }
+
+        .status-pill.done .status-dot {
+            background: #10b981;
+        }
+
+        .status-pill.error .status-dot {
+            background: #ef4444;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* ===== EMOTION DISPLAY ===== */
+        .emotion-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 12px;
+        }
+
+        .emotion-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 12px;
+            text-align: center;
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .emotion-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: currentColor;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .emotion-card.active {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
+        }
+
+        .emotion-card .emoji {
+            font-size: 28px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .emotion-card .name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: capitalize;
+            margin-bottom: 6px;
+        }
+
+        .emotion-card .confidence {
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--accent-2);
+            font-weight: 500;
+            min-height: 14px;
+        }
+
+        .emotion-bar {
+            height: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .emotion-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            width: 0%;
+            transition: width 0.6s ease;
+        }
+
+        /* ===== RESULT PANEL ===== */
+        .result-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .result-header span {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .transcript-text {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 28px;
+        }
+
+        .transcript-text.empty {
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .meta-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .meta-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(124, 58, 237, 0.1);
+            border: 1px solid rgba(124, 58, 237, 0.2);
+            border-radius: 8px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #a78bfa;
+        }
+
+        .meta-chip.emotion-chip {
+            background: rgba(6, 182, 212, 0.1);
+            border-color: rgba(6, 182, 212, 0.3);
+            color: #67e8f9;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* ===== TEST LOG ===== */
+        .test-log {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            height: 220px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.8;
+        }
+
+        .test-log::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .test-log::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .test-log::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 12px;
+            padding: 2px 0;
+        }
+
+        .log-time {
+            color: #475569;
+            flex-shrink: 0;
+        }
+
+        .log-info {
+            color: #a78bfa;
+        }
+
+        .log-success {
+            color: #34d399;
+        }
+
+        .log-warning {
+            color: #fbbf24;
+        }
+
+        .log-error {
+            color: #f87171;
+        }
+
+        /* ===== HISTORY ===== */
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .history-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .history-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .history-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            animation: slide-in 0.3s ease;
+        }
+
+        @keyframes slide-in {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .history-item .hi-text {
+            font-size: 14px;
+            color: var(--text-primary);
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .history-item .hi-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .hi-emotion-badge {
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .hi-time {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Emotion colors */
+        .em-neutral {
+            background: rgba(100, 116, 139, 0.3);
+            color: #94a3b8;
+        }
+
+        .em-happy {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fde68a;
+        }
+
+        .em-sad {
+            background: rgba(96, 165, 250, 0.2);
+            color: #93c5fd;
+        }
+
+        .em-angry {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .em-fear {
+            background: rgba(167, 139, 250, 0.2);
+            color: #c4b5fd;
+        }
+
+        .em-disgust {
+            background: rgba(52, 211, 153, 0.2);
+            color: #6ee7b7;
+        }
+
+        .em-surprise {
+            background: rgba(251, 146, 60, 0.2);
+            color: #fdba74;
+        }
+
+        /* ===== TIPS ===== */
+        .tips-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .tip-card {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .tip-card .tip-icon {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .tip-card p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            .card {
+                padding: 20px;
+            }
+
+            .emotion-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="page-header">
+        <a href="/" class="back-link">← Back to AURA</a>
+        <div class="badge">🎤 Voice Emotion Lab</div>
+        <h1>Voice Command Test</h1>
+        <p>Record your voice and watch AURA detect the emotion in real-time using audio analysis.</p>
+    </div>
+
+    <div class="main-container">
+
+        <!-- Recording Card -->
+        <div class="card">
+            <div class="card-title">🎙️ Voice Input</div>
+
+            <div class="mic-section">
+                <div class="mic-outer-ring" id="mic-outer-ring">
+                    <div class="mic-pulse-ring"></div>
+                    <div class="mic-pulse-ring"></div>
+                    <div class="mic-pulse-ring"></div>
+                    <button class="mic-btn" id="mic-btn" onclick="toggleMicrophone()" title="Click to start recording">
+                        <svg id="mic-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z" />
+                        </svg>
+                        <span id="mic-label-text">Click to Talk</span>
+                    </button>
+                </div>
+
+                <div class="status-pill idle" id="status-pill">
+                    <div class="status-dot"></div>
+                    <span id="status-text">Ready</span>
+                </div>
+
+                <!-- Waveform -->
+                <div class="waveform-container">
+                    <span class="waveform-label">Audio Level</span>
+                    <canvas id="waveform-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Latest Result -->
+        <div class="card">
+            <div class="card-title">📋 Latest Result</div>
+            <div class="result-panel">
+                <div class="result-header">
+                    <span id="result-meta-label">Waiting for input...</span>
+                    <span id="result-timestamp"></span>
+                </div>
+                <div class="transcript-text empty" id="transcript-text">Say something to see the transcription here...
+                </div>
+                <div class="meta-row" id="meta-row" style="display:none">
+                    <div class="meta-chip">🎯 Transcript</div>
+                    <div class="meta-chip emotion-chip" id="detected-emotion-chip">🔄 Detecting...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Emotion Breakdown -->
+        <div class="card">
+            <div class="card-title">💡 Audio Emotion Breakdown</div>
+            <div class="emotion-grid" id="emotion-grid">
+                <!-- filled by JS -->
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="card">
+            <div class="card-title">📝 Session History</div>
+            <div class="history-list" id="history-list">
+                <p style="color: var(--text-secondary); font-size:13px; padding:8px 0; font-style: italic;">No
+                    recordings yet...</p>
+            </div>
+        </div>
+
+        <!-- Debug Log -->
+        <div class="card">
+            <div class="card-title">🖥️ Debug Console</div>
+            <div class="test-log" id="test-log">
+                <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-info">Voice Emotion Test
+                        Lab initialized. Click the mic button to start.</span></div>
+            </div>
+        </div>
+
+        <!-- Tips -->
+        <div class="card">
+            <div class="card-title">💬 Testing Tips</div>
+            <div class="tips-grid">
+                <div class="tip-card">
+                    <div class="tip-icon">😄</div>
+                    <p>Say <strong>"I'm so happy today!"</strong> with excitement to test happy emotion</p>
+                </div>
+                <div class="tip-card">
+                    <div class="tip-icon">😢</div>
+                    <p>Say <strong>"I feel really sad"</strong> with a slow, low voice to test sad emotion</p>
+                </div>
+                <div class="tip-card">
+                    <div class="tip-icon">😡</div>
+                    <p>Say <strong>"This is so frustrating!"</strong> with force to test angry emotion</p>
+                </div>
+                <div class="tip-card">
+                    <div class="tip-icon">😐</div>
+                    <p>Say <strong>"The weather is okay today"</strong> flatly to test neutral emotion</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ============================================================
+        //  VOICE EMOTION TEST LAB
+        // ============================================================
+
+        const EMOTIONS = [
+            { key: 'neutral', emoji: '😐', label: 'Neutral' },
+            { key: 'happy', emoji: '😄', label: 'Happy' },
+            { key: 'sad', emoji: '😢', label: 'Sad' },
+            { key: 'angry', emoji: '😠', label: 'Angry' },
+            { key: 'fear', emoji: '😨', label: 'Fear' },
+            { key: 'disgust', emoji: '🤢', label: 'Disgust' },
+            { key: 'surprise', emoji: '😲', label: 'Surprise' },
+        ];
+
+        // State
+        let isRecording = false;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let audioStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let animFrameId = null;
+        let sessionHistory = [];
+
+        // ---- Build Emotion Grid ----
+        const emotionGrid = document.getElementById('emotion-grid');
+        EMOTIONS.forEach(em => {
+            emotionGrid.innerHTML += `
+        <div class="emotion-card" id="em-${em.key}" data-key="${em.key}">
+            <span class="emoji">${em.emoji}</span>
+            <div class="name">${em.label}</div>
+            <div class="confidence" id="conf-${em.key}">—</div>
+            <div class="emotion-bar">
+                <div class="emotion-bar-fill" id="bar-${em.key}"></div>
+            </div>
+        </div>`;
+        });
+
+        // ---- Logging ----
+        function log(msg, type = 'info') {
+            const logEl = document.getElementById('test-log');
+            const now = new Date();
+            const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            logEl.innerHTML += `<div class="log-entry"><span class="log-time">${time}</span><span class="log-${type}">${msg}</span></div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // ---- Status ----
+        function setStatus(state, text) {
+            const pill = document.getElementById('status-pill');
+            const statusText = document.getElementById('status-text');
+            pill.className = `status-pill ${state}`;
+            statusText.textContent = text;
+        }
+
+        // ---- Waveform ----
+        function drawWaveform() {
+            const canvas = document.getElementById('waveform-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            if (!analyser) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Draw flat line
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(124, 58, 237, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.moveTo(0, canvas.height / 2);
+                ctx.lineTo(canvas.width, canvas.height / 2);
+                ctx.stroke();
+                return;
+            }
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            function draw() {
+                animFrameId = requestAnimationFrame(draw);
+                analyser.getByteTimeDomainData(dataArray);
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'rgba(0,0,0,0)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+                gradient.addColorStop(0, '#7c3aed');
+                gradient.addColorStop(0.5, '#06b6d4');
+                gradient.addColorStop(1, '#7c3aed');
+
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = gradient;
+                ctx.beginPath();
+
+                const sliceWidth = canvas.width / bufferLength;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = v * canvas.height / 2;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                    x += sliceWidth;
+                }
+
+                ctx.lineTo(canvas.width, canvas.height / 2);
+                ctx.stroke();
+            }
+
+            draw();
+        }
+
+        function stopWaveform() {
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+            drawFlatLine();
+        }
+
+        function drawFlatLine() {
+            const canvas = document.getElementById('waveform-canvas');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(124, 58, 237, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+        }
+
+        // ---- Microphone Toggle ----
+        async function toggleMicrophone() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                log('Requesting microphone access...', 'info');
+                audioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000
+                    }
+                });
+
+                log('✅ Microphone access granted!', 'success');
+
+                // Set up AudioContext for waveform
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(audioStream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser);
+                drawWaveform();
+
+                // MediaRecorder
+                recordedChunks = [];
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                    ? 'audio/webm;codecs=opus'
+                    : MediaRecorder.isTypeSupported('audio/webm')
+                        ? 'audio/webm'
+                        : 'audio/mp4';
+
+                log(`Using codec: ${mimeType}`, 'info');
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    log('Recording stopped, sending to server for analysis...', 'info');
+                    processAudio();
+                };
+
+                mediaRecorder.start(500);
+                isRecording = true;
+
+                // Update UI
+                const btn = document.getElementById('mic-btn');
+                btn.classList.add('recording');
+                document.getElementById('mic-icon').innerHTML = `<path d="M12 2C10.34 2 9 3.34 9 5v6c0 1.66 1.34 3 3 3s3-1.34 3-3V5c0-1.66-1.34-3-3-3z"/><rect x="10" y="10" width="4" height="8" rx="1"/>`;
+                document.getElementById('mic-label-text').textContent = 'Recording...';
+                document.getElementById('mic-outer-ring').classList.add('recording');
+                setStatus('recording', 'Recording — Click to Stop');
+
+                log('🔴 Recording started! Click the mic button to stop.', 'warning');
+
+            } catch (err) {
+                log(`❌ Mic error: ${err.message}`, 'error');
+                setStatus('error', 'Mic access denied');
+                alert('Could not access microphone: ' + err.message);
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+
+            if (audioStream) {
+                audioStream.getTracks().forEach(t => t.stop());
+                audioStream = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+                analyser = null;
+            }
+
+            stopWaveform();
+
+            // Reset button
+            const btn = document.getElementById('mic-btn');
+            btn.classList.remove('recording');
+            document.getElementById('mic-icon').innerHTML = `<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>`;
+            document.getElementById('mic-label-text').textContent = 'Click to Talk';
+            document.getElementById('mic-outer-ring').classList.remove('recording');
+
+            setStatus('processing', 'Processing audio...');
+            log('⏳ Sending audio to server...', 'info');
+        }
+
+        // ---- Process Audio: tries /api/voice-test first (richer), falls back to /api/audio ----
+        async function processAudio() {
+            if (recordedChunks.length === 0) {
+                log('No audio data recorded.', 'warning');
+                setStatus('idle', 'Ready');
+                return;
+            }
+
+            const audioBlob = new Blob(recordedChunks, { type: recordedChunks[0].type });
+            const sizeKB = (audioBlob.size / 1024).toFixed(1);
+            log(`Audio blob ready: ${sizeKB} KB`, 'info');
+
+            recordedChunks = [];
+
+            const ext = audioBlob.type.includes('webm') ? 'webm' : 'mp4';
+
+            try {
+                const startTime = Date.now();
+
+                // Try the rich /api/voice-test endpoint first
+                const fd1 = new FormData();
+                fd1.append('file', audioBlob, `voice_test.${ext}`);
+                let response = await fetch('/api/voice-test', { method: 'POST', body: fd1 });
+
+                if (!response.ok) {
+                    log('Falling back to /api/audio...', 'warning');
+                    const fd2 = new FormData();
+                    fd2.append('file', audioBlob, `voice_test.${ext}`);
+                    response = await fetch('/api/audio', { method: 'POST', body: fd2 });
+                }
+
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+                const data = await response.json();
+                log(`✅ Analysis complete in ${elapsed}s`, 'success');
+                displayResults(data);
+
+            } catch (err) {
+                log(`❌ Error: ${err.message}`, 'error');
+                setStatus('error', 'Processing failed');
+            }
+        }
+
+        // ---- Display Results (handles both /api/voice-test and /api/audio response shapes) ----
+        function displayResults(data) {
+            // /api/voice-test: { transcript, audio_emotion, text_emotion }
+            // /api/audio:      { input_text, input_emotion }
+            const transcript = data.transcript || data.input_text || '';
+            const audioEmotion = data.audio_emotion || data.input_emotion || 'neutral';
+            const textEmotion = data.text_emotion || null;
+            const now = new Date();
+
+            log(`Transcript: "${transcript}"`, 'success');
+            log(`Audio Emotion (wav2vec2): ${audioEmotion}`, 'success');
+            if (textEmotion) log(`Text Emotion (DistilRoBERTa): ${textEmotion}`, 'success');
+
+            // Update transcript panel
+            const transcriptEl = document.getElementById('transcript-text');
+            if (transcript) {
+                transcriptEl.textContent = `"${transcript}"`;
+                transcriptEl.classList.remove('empty');
+            } else {
+                transcriptEl.textContent = '⚠️ No speech detected. Try speaking louder or closer to the mic.';
+                transcriptEl.classList.add('empty');
+            }
+
+            const timestampLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            document.getElementById('result-timestamp').textContent = timestampLabel;
+
+            document.getElementById('result-meta-label').textContent = transcript
+                ? `Audio model detected: ${audioEmotion.toUpperCase()}`
+                : 'No speech detected — try speaking louder';
+
+            // Show emotion chips (audio + text)
+            const metaRow = document.getElementById('meta-row');
+            const emotionChip = document.getElementById('detected-emotion-chip');
+            if (transcript) {
+                metaRow.style.display = 'flex';
+                const em = EMOTIONS.find(e => e.key === audioEmotion) || { emoji: '🎭', key: audioEmotion };
+                emotionChip.textContent = `${em.emoji} Audio: ${audioEmotion}`;
+
+                // Add text emotion chip if present
+                const existingTextChip = document.getElementById('text-emotion-chip');
+                if (existingTextChip) existingTextChip.remove();
+                if (textEmotion) {
+                    const tChip = document.createElement('div');
+                    tChip.id = 'text-emotion-chip';
+                    tChip.className = 'meta-chip';
+                    tChip.style.cssText = 'background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.3);color:#6ee7b7;font-size:13px;font-weight:600';
+                    const tem = EMOTIONS.find(e => e.key === textEmotion) || { emoji: '📝' };
+                    tChip.textContent = `${tem.emoji || '📝'} Text: ${textEmotion}`;
+                    metaRow.appendChild(tChip);
+                    log(`Text Emotion chip added: ${textEmotion}`, 'info');
+                }
+            }
+
+            // Highlight emotion card
+            highlightEmotion(audioEmotion);
+
+            // Add to history
+            addToHistory(transcript, audioEmotion, timestampLabel);
+
+            setStatus('done', `Done — 🎤 ${audioEmotion}${textEmotion ? ' / 📝 ' + textEmotion : ''}`);
+        }
+
+        function highlightEmotion(detected) {
+            // Reset all
+            EMOTIONS.forEach(em => {
+                const card = document.getElementById(`em-${em.key}`);
+                if (card) card.classList.remove('active');
+                const bar = document.getElementById(`bar-${em.key}`);
+                if (bar) bar.style.width = '0%';
+                const conf = document.getElementById(`conf-${em.key}`);
+                if (conf) conf.textContent = '—';
+            });
+
+            // Activate detected with simulated confidence bar
+            const card = document.getElementById(`em-${detected}`);
+            if (card) {
+                card.classList.add('active');
+                const bar = document.getElementById(`bar-${detected}`);
+                // Animate bar filling
+                setTimeout(() => {
+                    if (bar) bar.style.width = '92%';
+                }, 50);
+                const conf = document.getElementById(`conf-${detected}`);
+                if (conf) conf.textContent = 'DETECTED';
+            }
+        }
+
+        function addToHistory(text, emotion, time) {
+            const list = document.getElementById('history-list');
+
+            // Clear placeholder
+            const placeholder = list.querySelector('p');
+            if (placeholder) placeholder.remove();
+
+            const em = EMOTIONS.find(e => e.key === emotion) || { emoji: '🎭', key: emotion };
+            const emotionClass = `em-${emotion}`;
+
+            const item = document.createElement('div');
+            item.className = 'history-item';
+            item.innerHTML = `
+        <div class="hi-text">${text ? `"${text}"` : '⚠️ No speech detected'}</div>
+        <div class="hi-meta">
+            <span class="hi-emotion-badge ${emotionClass}">${em.emoji} ${emotion}</span>
+            <span class="hi-time">${time}</span>
+        </div>
+    `;
+
+            list.insertBefore(item, list.firstChild);
+            sessionHistory.unshift({ text, emotion, time });
+        }
+
+        // ---- Init ----
+        window.addEventListener('load', () => {
+            drawFlatLine();
+
+            // Check server status
+            fetch('/api/updates').then(() => {
+                log('✅ Server connection OK', 'success');
+            }).catch(() => {
+                log('⚠️ Cannot connect to server. Make sure AURA is running on port 8000.', 'error');
+                setStatus('error', 'Server offline');
+            });
+
+            log('Voice Emotion Test Lab ready. Grant mic permission and click the button to test.', 'info');
+        });
+    </script>
+</body>
+
+</html>

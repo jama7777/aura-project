@@ -87,19 +87,32 @@ def process_input(input_data, provider="auto"):
         "You are AURA, a highly intelligent and empathetic AI friend. "
         "You have eyes (camera) and ears (microphone). "
         "INTERACTION RULES:\n"
-        "1. If the user speaks, respond naturally.\n"
-        "2. VITAL: If 'Gesture' in input is NOT 'none', you MUST acknowledge it IMMEDIATELY in your text.\n"
-        "   - 'victory' -> Say something like 'Peace!', 'Yay!', or 'You rock!'.\n"
+        "1. If the user speaks, respond naturally in 1-2 sentences.\n"
+        "2. VITAL: If 'Gesture' in input is NOT 'none', you MUST acknowledge it IMMEDIATELY.\n"
+        "   - 'victory' -> Say 'Peace!', 'Yay!', or 'You rock!'.\n"
         "   - 'thumbs_up' -> Say 'Awesome!', 'Great job!', or 'Liked it?'.\n"
         "   - 'open_palm' -> Say 'High five!', 'Hello!', or 'I see you!'.\n"
         "   - 'fist' -> Say 'Bump!', 'Power!', or 'Strong!'.\n"
-        "3. EMOTION AWARENESS: You receive the user's emotion (e.g. 'happy', 'sad', 'angry', 'neutral').\n"
-        "   - If 'happy', match the energy! \n"
-        "   - If 'sad', be empathetic and ask what's wrong.\n"
-        "   - If 'neutral', just chat normally.\n"
-        "4. LEARN from the user. Refer to the 'Memory Context' below to recall past details.\n"
-        "5. Keep responses concise (1-2 sentences) and conversational.\n"
-        "6. **EMOTION TAGGING**: At the VERY END of your response, you MUST classify your own response emotion as one of: [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]. Format it strictly as [[emotion]]. Example: 'Hello there! [[happy]]' or 'Thank you so much! [[grateful]]'."
+        "3. EMOTION AWARENESS: Mirror the user's emotion in your response tone AND in your tag.\n"
+        "   - User is happy/excited -> respond happily -> tag [[happy]] or [[excited]]\n"
+        "   - User is sad/down/depressed -> be empathetic -> tag [[sad]]\n"
+        "   - User is angry/furious/frustrated -> acknowledge firmly -> tag [[angry]] or [[sad]]\n"
+        "   - User is surprised/shocked/amazed -> match excitement -> tag [[surprised]] or [[excited]]\n"
+        "   - User is grateful/thankful -> express warmth -> tag [[grateful]]\n"
+        "   - User is neutral -> chat normally -> tag [[neutral]]\n"
+        "4. LEARN from the user. Refer to 'Memory Context' below for past details.\n"
+        "5. Keep responses concise (1-2 sentences MAX) and conversational.\n"
+        "6. **CRITICAL EMOTION TAGGING RULE**: At the VERY END of your response, "
+        "write EXACTLY [[emotion]] — one word from: "
+        "[neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]. "
+        "The tag MUST reflect the user's emotional state, NOT just AURA's own feeling. "
+        "EXAMPLES:\n"
+        "   User: 'I am so happy!' -> end with [[happy]]\n"
+        "   User: 'I am so angry!' -> end with [[angry]]\n"
+        "   User: 'I feel really sad' -> end with [[sad]]\n"
+        "   User: 'Wow that is amazing!' -> end with [[surprised]]\n"
+        "   User: 'Thank you!' -> end with [[grateful]]\n"
+        "   NEVER tag [[neutral]] when the user expressed a clear non-neutral emotion."
     )
     
     # Select Model and Client based on Provider strategy
@@ -169,10 +182,50 @@ def process_input(input_data, provider="auto"):
     if response_emotion not in valid_emotions:
         response_emotion = "neutral"
 
+    # ── Smart Emotion Fallback ────────────────────────────────────────────────
+    # If the LLM stubbornly returned "neutral" even though the user expressed
+    # a clear emotion, we detect it from keywords and override the tag.
+    # This fixes cases where GPT-4o-mini ignores the [[emotion]] instruction.
+    if response_emotion == "neutral":
+        combined_text = (text + " " + emotion).lower()
+
+        # Keyword → emotion groups (checked in priority order)
+        keyword_emotion_map = [
+            ("angry", ["angry", "furious", "mad", "pissed", "rage", "infuriated",
+                       "outraged", "livid", "fuming", "irritated", "frustrated"]),
+            ("sad",   ["sad", "depressed", "devastated", "heartbroken", "miserable",
+                       "cry", "crying", "tears", "hopeless", "lonely", "grief",
+                       "unhappy", "sorrowful"]),
+            ("surprised", ["surprised", "shocked", "wow", "incredible", "unbelievable",
+                           "astonishing", "amazing", "omg", "whoa"]),
+            ("happy", ["happy", "joy", "excited", "love", "great", "wonderful",
+                       "fantastic", "awesome", "thrilled", "ecstatic", "glad",
+                       "cheerful", "delighted"]),
+            ("grateful", ["grateful", "thank", "thanks", "appreciate", "thankful",
+                          "gratitude", "blessed"]),
+            ("tired",  ["tired", "exhausted", "sleepy", "drained", "worn out", "fatigue"]),
+        ]
+
+        # Also honour the input emotion directly when it's non-neutral
+        direct_map = {
+            "happy": "happy", "excited": "excited", "sad": "sad",
+            "angry": "angry", "surprised": "surprised", "grateful": "grateful",
+            "fearful": "sad", "disgusted": "neutral", "tired": "tired",
+        }
+        if emotion in direct_map and emotion != "neutral":
+            response_emotion = direct_map[emotion]
+        else:
+            for mapped_emotion, keywords in keyword_emotion_map:
+                if any(kw in combined_text for kw in keywords):
+                    response_emotion = mapped_emotion
+                    print(f"[brain] Emotion fallback applied: neutral → {mapped_emotion}")
+                    break
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Save to memory
     if collection:
         try:
-            # We save the interaction: Query -> Response
+            # We save the interaction: Query → Response
             memory_entry = f"{query} -> AURA: {response}"
             collection.add(documents=[memory_entry], ids=[str(hash(memory_entry))])
         except Exception as e:

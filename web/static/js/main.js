@@ -1,5 +1,6 @@
 import { Avatar } from './avatar.js?v=5';
 import { GestureHandler } from './gesture.js';
+import { FaceEmotionDetector } from './face_emotion.js';
 
 const avatar = new Avatar();
 window.avatar = avatar; // Debugging
@@ -9,8 +10,106 @@ let lastTriggeredEmotion = null;
 let emotionStartTime = 0;
 let emotionCooldown = 0;
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ─── INPUT LOCK (MUTEX) ───────────────────────────────────────────────────────
+// Only ONE input (text / voice / gesture / face-emotion) may be processed at a
+// time.  While the lock is held every other input path silently drops its request
+// and logs a message instead of sending a duplicate API call.
+//
+// How it works:
+//  • acquireInputLock(source)  → returns true if lock granted, false if busy
+//  • releaseInputLock()        → frees the lock (called after response finishes)
+//  • showInputBusy(source)     → shows a small status-bar indicator
+//  • hideInputBusy()           → clears the indicator
+// ══════════════════════════════════════════════════════════════════════════════
+let _inputLocked = false;   // true = a request is already in flight
+let _lockSource = null;    // which input grabbed the lock ('text'|'voice'|'gesture'|'emotion')
+
+function acquireInputLock(source) {
+    if (_inputLocked) {
+        log(`[InputLock] 🔒 Blocked "${source}" — "${_lockSource}" is still processing.`);
+        _showBusyHint(source);
+        return false;
+    }
+    _inputLocked = true;
+    _lockSource = source;
+    isAuraTalking = true;    // sync legacy flag
+    log(`[InputLock] 🔓 Lock acquired by: ${source}`);
+    _showProcessingIndicator(source);
+    return true;
+}
+
+function releaseInputLock() {
+    log(`[InputLock] 🔓 Lock released (was: ${_lockSource})`);
+    _inputLocked = false;
+    _lockSource = null;
+    isAuraTalking = false;   // sync legacy flag
+    // Reset emotion stability so stale emotions don’t instantly re-trigger
+    lastTriggeredEmotion = null;
+    emotionStartTime = Date.now();
+    emotionCooldown = Date.now();   // enforce cooldown gap after each response
+    _hideProcessingIndicator();
+}
+
+/** Show a small "⏳ Processing..." badge in the status bar */
+function _showProcessingIndicator(source) {
+    let badge = document.getElementById('input-lock-badge');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'input-lock-badge';
+        badge.style.cssText = [
+            'position:absolute', 'top:8px', 'left:50%', 'transform:translateX(-50%)',
+            'background:rgba(108,92,231,0.85)', 'color:#fff', 'font-size:12px',
+            'padding:4px 14px', 'border-radius:20px', 'z-index:200',
+            'pointer-events:none', 'transition:opacity .3s', 'font-weight:600',
+            'letter-spacing:0.5px', 'box-shadow:0 2px 12px rgba(108,92,231,0.6)'
+        ].join(';');
+        document.getElementById('ui-overlay').appendChild(badge);
+    }
+    const icons = { text: '💬', voice: '🎤', gesture: '👋', emotion: '😊' };
+    badge.textContent = `${icons[source] || '⏳'} Processing ${source}…`;
+    badge.style.opacity = '1';
+    badge.style.display = 'block';
+}
+
+function _hideProcessingIndicator() {
+    const badge = document.getElementById('input-lock-badge');
+    if (badge) { badge.style.opacity = '0'; setTimeout(() => { badge.style.display = 'none'; }, 300); }
+}
+
+/** Show a brief "busy" hint when an input is dropped */
+function _showBusyHint(source) {
+    let hint = document.getElementById('input-busy-hint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'input-busy-hint';
+        hint.style.cssText = [
+            'position:absolute', 'top:40px', 'left:50%', 'transform:translateX(-50%)',
+            'background:rgba(255,68,68,0.85)', 'color:#fff', 'font-size:11px',
+            'padding:3px 12px', 'border-radius:16px', 'z-index:200',
+            'pointer-events:none', 'transition:opacity .4s'
+        ].join(';');
+        document.getElementById('ui-overlay').appendChild(hint);
+    }
+    hint.textContent = `⏳ Wait — ${_lockSource} is processing…`;
+    hint.style.opacity = '1';
+    hint.style.display = 'block';
+    setTimeout(() => {
+        hint.style.opacity = '0';
+        setTimeout(() => { hint.style.display = 'none'; }, 400);
+    }, 1800);
+}
+
+// ── TALKING GUARD ──────────────────────────────────────────────────────────
+// isAuraTalking is kept in sync with InputLock acquire/release automatically.
+let isAuraTalking = false;
+window._setAuraTalking = (v) => { isAuraTalking = v; };  // debug helper
+window._isLocked = () => _inputLocked;                   // debug helper
+
 const gestureHandler = new GestureHandler(avatar, (gesture) => {
-    // Send gesture to backend
+    // ── InputLock: block if any input is already in flight ──
+    if (!acquireInputLock('gesture')) return;
+
     log(`Sending gesture: ${gesture} (Emotion: ${currentEmotion})`);
     addMessage(`(Gesture: ${gesture})`, 'user');
     fetch('/api/chat', {
@@ -20,7 +119,10 @@ const gestureHandler = new GestureHandler(avatar, (gesture) => {
     })
         .then(res => res.json())
         .then(data => handleResponse(data))
-        .catch(err => console.error("Error sending gesture:", err));
+        .catch(err => {
+            console.error("Error sending gesture:", err);
+            releaseInputLock();  // release on error so AURA doesn't freeze
+        });
 });
 // ========== AUDIO RECORDING VARIABLES ==========
 let isRecording = false;        // Track if we're currently recording
@@ -29,12 +131,8 @@ let recordedChunks = [];        // Store audio data chunks
 let audioStream = null;         // Microphone stream
 
 function log(msg) {
-    console.log(msg);
-    const debugDiv = document.getElementById('debug-console');
-    if (debugDiv) {
-        debugDiv.innerHTML += `<div>[Main] ${msg}</div>`;
-        debugDiv.scrollTop = debugDiv.scrollHeight;
-    }
+    // Debug output goes ONLY to browser DevTools (F12 → Console), never to visible UI.
+    console.log('[AURA]', msg);
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -75,33 +173,37 @@ async function pollForUpdates() {
 
         if (data.text) {
             log(`External command received: "${data.text.substring(0, 20)}..."`);
-            handleResponse(data);
+            // Only process external command if no other input is currently active
+            if (!_inputLocked) {
+                acquireInputLock('external');
+                handleResponse(data);
+            } else {
+                log('[pollForUpdates] Skipped — another input is locked.');
+            }
         }
     } catch (e) {
         // Silent fail on polling errors
     }
 }
 
+// Restore face-api.js model loading (TinyFaceDetector + faceExpressionNet)
 async function loadFaceAPI() {
-    log("Loading Face API models...");
+    log("[FaceEmotion] Loading face-api.js models...");
     try {
-        log("Loading Face API models...");
-        // Tuning for High Accuracy: Using SSD MobileNet V1
-        // This model is slower but much more accurate than TinyFaceDetector
-        await faceapi.nets.ssdMobilenetv1.loadFromUri('/face-models');
+        // Try local models first
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
         await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
-        log("Face API models (SSD MobileNet V1) loaded successfully.");
+        log("[FaceEmotion] Models loaded from local /face-models ✅");
     } catch (e) {
-        log("Local models not found, attempting CDN fallback...");
+        log("[FaceEmotion] Local models not found — trying CDN...");
         try {
-            const modelUrl = 'https://justadudewhohacks.github.io/face-api.js/models';
-            await faceapi.nets.ssdMobilenetv1.loadFromUri(modelUrl);
-            await faceapi.nets.faceExpressionNet.loadFromUri(modelUrl);
-            log("Face API models (SSD MobileNet V1) loaded from CDN.");
+            const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
+            await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
+            await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
+            log("[FaceEmotion] Models loaded from CDN ✅");
         } catch (err) {
-            console.error("Face API Error:", err);
-            log(`Failed to load Face Models: ${err.message}`);
-            addMessage("⚠️ Face detection disabled (Models failed to load).", 'aura');
+            console.error('[FaceEmotion] Model load failed:', err);
+            log(`[FaceEmotion] ❌ Could not load models: ${err.message}`);
         }
     }
 }
@@ -151,16 +253,10 @@ function setupEventListeners() {
 }
 
 function triggerManualGesture(gesture) {
-    log(`Manual/Body Gesture Triggered: ${gesture}`);
+    log(`Manual Gesture Triggered: ${gesture}`);
 
-    // 1. Play animation locally immediately for feedback
-    // Mapping gesture to animation
-    // 'wave' -> we don't have wave animation code in gesture.js, but let's see server.py...
-    // Server has: hug, dance, happy, sad, clap, pray, jump.
-    // 'wave' -> maybe mapping to 'talk' or we need to add 'tier1' animations if available in avatar.
-    // For now, allow server to decide or simple mapping.
-
-    // We send to server as gesture, brain.py handles it.
+    // ── InputLock: only one request at a time ──
+    if (!acquireInputLock('gesture')) return;
 
     addMessage(`(Gesture: ${gesture})`, 'user');
 
@@ -171,7 +267,10 @@ function triggerManualGesture(gesture) {
     })
         .then(res => res.json())
         .then(data => handleResponse(data))
-        .catch(err => console.error("Error sending gesture:", err));
+        .catch(err => {
+            console.error("Error sending gesture:", err);
+            releaseInputLock();
+        });
 }
 
 
@@ -183,16 +282,18 @@ async function sendMessage() {
     const text = input.value.trim();
     if (!text) return;
 
+    // ── InputLock: only one request at a time ──
+    if (!acquireInputLock('text')) return;
+
     addMessage(text, 'user');
     input.value = '';
+    input.disabled = true;   // visually block re-entry while processing
 
     // Detect emotion from user's text locally for immediate avatar reaction
     const userEmotion = detectEmotionFromText(text);
     if (userEmotion !== "neutral" && avatar && avatar.showEmotion) {
         log(`User emotion detected: ${userEmotion}`);
-        // Show user's emotion briefly on avatar (empathy response)
-        // Use false for triggerAnimation - we only want facial expression, not body animation
-        avatar.showEmotion(userEmotion, 0.5, false); // Half intensity, facial only
+        avatar.showEmotion(userEmotion, 0.5, false);
     }
 
     try {
@@ -207,6 +308,9 @@ async function sendMessage() {
     } catch (error) {
         console.error('Error sending message:', error);
         addMessage("Error connecting to AURA.", 'aura');
+        releaseInputLock();  // release on error
+    } finally {
+        input.disabled = false;   // re-enable input field
     }
 }
 
@@ -241,16 +345,21 @@ function detectEmotionFromText(text) {
 // ========== MICROPHONE FUNCTIONS ==========
 
 /**
- * Toggle microphone recording on/off
- * Click once to start, click again to stop and send
+ * Toggle microphone recording on/off.
+ * If the input lock is held, starting a new recording is blocked.
  */
 async function toggleMicrophone() {
     if (isRecording) {
-        // Currently recording -> Stop and send
+        // Currently recording → Stop and send
         log("Stopping recording...");
         stopRecording();
     } else {
-        // Not recording -> Start recording
+        // Not recording → guard: don't start if AURA is already processing
+        if (_inputLocked) {
+            log('[Mic] Blocked — another input is still processing.');
+            _showBusyHint('voice');
+            return;
+        }
         log("Starting recording...");
         await startRecording();
     }
@@ -411,9 +520,12 @@ async function sendAudioToServer() {
  * Actually send the audio to the server for transcription
  */
 async function sendToServerForTranscription(audioBlob) {
-    // Processing silently - no status message
+    // ── InputLock: block if another input is already being processed ──
+    if (!acquireInputLock('voice')) {
+        log('[Voice] Request dropped — another input is in progress.');
+        return;
+    }
 
-    // Prepare form data
     const formData = new FormData();
     const extension = audioBlob.type.includes('webm') ? 'webm' : 'mp4';
     formData.append('file', audioBlob, `recording.${extension}`);
@@ -429,27 +541,25 @@ async function sendToServerForTranscription(audioBlob) {
         log("Server response received.");
 
         if (data.input_text && data.input_text.trim()) {
-            // Success - clearly show what was heard
             const heardText = data.input_text.trim();
             log(`Transcribed: "${heardText}"`);
-
-            // Show only the transcribed text (no extra prefix)
             addMessage(heardText, 'user');
 
-            // Handle the response (play audio, animate avatar, etc.)
             if (data.text) {
                 handleResponse(data);
+            } else {
+                releaseInputLock();  // no response body → release now
             }
         } else {
-            // Transcription failed - silent (check console log)
             log("Could not understand audio.");
-            // No error message shown - cleaner UI
+            releaseInputLock();  // nothing transcribed → release
         }
 
     } catch (error) {
         console.error("Audio API error:", error);
         log(`Error: ${error.message}`);
         addMessage("⚠️ Error processing audio", 'aura');
+        releaseInputLock();  // release on error
     }
 }
 
@@ -483,6 +593,10 @@ function handleResponse(data) {
         log(`Playing audio: ${data.audio_url} `);
         const audio = new Audio(data.audio_url);
         window.currentAudio = audio; // Track it
+
+        // ── TALKING GUARD: block emotion/gesture triggers while AURA speaks ──
+        isAuraTalking = true;
+        log('[Guard] AURA started talking — emotion & gesture triggers paused.');
 
         audio.play().then(() => {
             avatar.setTalking(true);
@@ -522,14 +636,22 @@ function handleResponse(data) {
         });
 
         audio.onended = () => {
+            isAuraTalking = false;
+            emotionCooldown = Date.now();
+            lastTriggeredEmotion = null;
+            log('[Guard] AURA finished talking — inputs re-enabled.');
             avatar.setTalking(false);
             stopFaceSync();
             avatar.playAnimation('idle');
             window.currentAudio = null;
-            log("Audio playback finished.");
+            // ── Release InputLock after audio finishes ──
+            releaseInputLock();
+            log('Audio playback finished.');
         };
     } else {
         log("No audio response.");
+        // No audio means response is done — release lock immediately
+        releaseInputLock();
     }
 
     // Animation based on emotion/keywords
@@ -717,94 +839,163 @@ async function toggleCamera() {
     }
 }
 
-let faceInterval;
+// ═══════════════════════════════════════════════════════════════
+// FACE EMOTION DETECTION — MediaPipe FaceMesh + Geometric Ratios
+// ═══════════════════════════════════════════════════════════════
+
+let faceDetector = null;    // FaceEmotionDetector instance
+
+/** Called when camera is turned ON */
 function startFaceDetection(video) {
     const statusSpan = document.getElementById('current-emotion');
 
-    faceInterval = setInterval(async () => {
-        if (!video || video.paused || video.ended || video.readyState < 2) return;
+    // Lazy-create the detector
+    if (!faceDetector) {
+        faceDetector = new FaceEmotionDetector();
 
-        // Detect emotions using SSD MobileNet V1 (loaded in loadFaceAPI)
-        // SSD MobileNet is more accurate than TinyFaceDetector
-        // minConfidence: 0.3 = minimum face detection confidence threshold
-        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+        // ── On each emotion change ──────────────────────────────────
+        faceDetector.onEmotion((emotion, confidence, scores) => {
+            currentEmotion = emotion;
 
-        try {
-            const detections = await faceapi.detectAllFaces(video, options).withFaceExpressions();
+            // Update status bar text
+            const pct = (confidence * 100).toFixed(0);
+            statusSpan.textContent =
+                emotion.charAt(0).toUpperCase() + emotion.slice(1) + ` (${pct}%)`;
+            statusSpan.style.color = emotion === 'neutral' ? '#aaa' : '#00ff88';
 
-            if (detections && detections.length > 0) {
-                // Visual Feedback
-                video.style.border = "3px solid #00ff00";
-                video.style.boxShadow = "0 0 20px #00ff00";
-
-                // Get dominant emotion
-                const expressions = detections[0].expressions;
-                const sorted = Object.entries(expressions).sort((a, b) => b[1] - a[1]);
-                const dominant = sorted[0];
-
-                // Debug log occasionally
-                // if (Math.random() < 0.1) log(`Face detected: ${ dominant[0] } (${ (dominant[1] * 100).toFixed(0) }%)`);
-
-                if (dominant[1] > 0.2) { // Extremely low threshold for debugging
-                    currentEmotion = dominant[0];
-                    statusSpan.textContent = currentEmotion.charAt(0).toUpperCase() + currentEmotion.slice(1) + ` (${(dominant[1] * 100).toFixed(0)}%)`;
-                    statusSpan.style.color = "#00ff00";
-
-                    // Auto-Trigger Logic
-                    const now = Date.now();
-                    // Ignore neutral and ensure cooldown (5s) passed (was 15s)
-                    if (currentEmotion !== 'neutral' && (now - emotionCooldown > 5000)) {
-                        if (currentEmotion === lastTriggeredEmotion) {
-                            // Sustained check
-                            if (now - emotionStartTime > 1000) { // Held for 1 second (was 2s)
-                                log(`Emotion Sustained(${currentEmotion}) - Triggering Reaction!`);
-                                triggerEmotionReaction(currentEmotion);
-                                emotionCooldown = now;
-                                lastTriggeredEmotion = null; // Reset to avoid double trigger
-                            }
-                        } else {
-                            // New emotion started
-                            lastTriggeredEmotion = currentEmotion;
-                            emotionStartTime = now;
-                        }
-                    } else if (currentEmotion !== lastTriggeredEmotion) {
-                        // Reset tracker if emotion changes
-                        lastTriggeredEmotion = currentEmotion;
-                        emotionStartTime = now;
-                    }
-
-                } else {
-                    lastTriggeredEmotion = null; // Reset if confidence drops
-                    statusSpan.style.color = "#aaa";
-                }
-            } else {
-                video.style.border = "2px solid #333";
-                video.style.boxShadow = "none";
-                if (Math.random() < 0.05) log("No face detected (Check lighting/angle)");
+            // Show emotion on avatar face immediately
+            if (avatar && avatar.showEmotion && emotion !== 'neutral') {
+                avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), false);
             }
-        } catch (e) {
-            console.warn("Face detection error:", e);
-        }
 
-    }, 500); // Check every 500ms
+            // Auto-trigger AURA reaction after sustained emotion (with cooldown)
+            const now = Date.now();
+
+            // ╔═══════════════════════════════════════════════════════════════════
+            // KEY FIX: Face emotion KEEPS DETECTING continuously — even while
+            // the user is typing / speaking.  But the auto-trigger that actually
+            // sends a request to the backend is SUPPRESSED while the input lock
+            // is held.  Once the lock releases the cooldown resets, so AURA
+            // won't immediately re-act to an emotion that was building up during
+            // the previous response.
+            // ╚═══════════════════════════════════════════════════════════════════
+            if (_inputLocked) {
+                // Silently skip: face keeps updating avatar expression, 
+                // but does NOT send to backend while another input is active.
+                return;
+            }
+
+            if (emotion !== 'neutral' && confidence > 0.20 && (now - emotionCooldown > 4000)) {
+                if (emotion === lastTriggeredEmotion) {
+                    if (now - emotionStartTime > 800) {
+                        log(`[FaceEmotion] Sustained: ${emotion} (${pct}%) → Triggering reaction`);
+                        triggerEmotionReaction(emotion);
+                        emotionCooldown = now;
+                        lastTriggeredEmotion = null;
+                    }
+                } else {
+                    lastTriggeredEmotion = emotion;
+                    emotionStartTime = now;
+                }
+            } else if (emotion !== lastTriggeredEmotion) {
+                lastTriggeredEmotion = emotion;
+                emotionStartTime = now;
+            }
+        });
+
+        // ── Debug / live score bar ──────────────────────────────────
+        faceDetector.onDebug((emotion, scores) => {
+            if (!scores) {
+                // No face detected
+                video.style.border = '2px solid #333';
+                video.style.boxShadow = 'none';
+                statusSpan.textContent = 'No face';
+                statusSpan.style.color = '#888';
+                _updateEmotionBar(null);
+                return;
+            }
+            // Green glow when face found
+            video.style.border = '3px solid #00ff88';
+            video.style.boxShadow = '0 0 18px #00cc66';
+            _updateEmotionBar(scores);
+        });
+    }
+
+    // Start the face-api.js detection loop on the video element
+    faceDetector.start(video);
+    log('[FaceEmotion] Face emotion detector started ✅');
 }
 
+/** Called when camera is turned OFF */
+function stopFaceDetection() {
+    if (faceDetector) {
+        faceDetector.stop();
+        faceDetector = null;
+    }
+    _updateEmotionBar(null);
+}
+
+/** Render a small emotion score bar in the status area (if element exists) */
+const EMOTION_COLORS = {
+    happy: '#f9c74f',
+    sad: '#4895ef',
+    angry: '#f72585',
+    surprised: '#7209b7',
+    fearful: '#560bad',
+    disgusted: '#3a0ca3',
+    neutral: '#aaa',
+};
+
+function _updateEmotionBar(scores) {
+    let bar = document.getElementById('emotion-score-bar');
+    if (!bar) {
+        // Create it once
+        bar = document.createElement('div');
+        bar.id = 'emotion-score-bar';
+        bar.style.cssText = [
+            'position:absolute', 'top:60px', 'left:12px',
+            'display:flex', 'flex-direction:column', 'gap:3px',
+            'background:rgba(0,0,0,0.55)', 'padding:6px 10px',
+            'border-radius:8px', 'font-size:11px', 'color:#fff',
+            'pointer-events:none', 'z-index:99', 'min-width:130px'
+        ].join(';');
+        document.getElementById('ui-overlay').appendChild(bar);
+    }
+
+    if (!scores) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+
+    bar.innerHTML = Object.entries(scores)
+        .sort((a, b) => b[1] - a[1])
+        .map(([emo, val]) => {
+            const pct = Math.round(val * 100);
+            const color = EMOTION_COLORS[emo] || '#888';
+            return `
+              <div style="display:flex;align-items:center;gap:5px">
+                <span style="width:58px;text-align:right;color:${color}">${emo}</span>
+                <div style="flex:1;background:#333;border-radius:3px;height:7px">
+                  <div style="width:${pct}%;background:${color};height:100%;border-radius:3px;transition:width .15s"></div>
+                </div>
+                <span style="width:28px;color:#ccc">${pct}%</span>
+              </div>`;
+        }).join('');
+}
+
+/** Send the detected emotion to AURA backend for a reaction */
 function triggerEmotionReaction(emotion) {
+    // ── InputLock: block if any other input is already in flight ──
+    if (!acquireInputLock('emotion')) return;
+
     addMessage(`(Emotion Detected: ${emotion})`, 'user');
-
-    // Play sound or visual feedback?
-    // For now just console log and send
-
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: "", emotion: emotion, gesture: "none" })
+        body: JSON.stringify({ text: '', emotion: emotion, gesture: 'none' })
     })
         .then(res => res.json())
         .then(data => handleResponse(data))
-        .catch(err => console.error("Error triggering emotion:", err));
-}
-
-function stopFaceDetection() {
-    if (faceInterval) clearInterval(faceInterval);
+        .catch(err => {
+            console.error('Error triggering emotion:', err);
+            releaseInputLock();
+        });
 }
