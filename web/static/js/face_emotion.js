@@ -26,6 +26,7 @@ export class FaceEmotionDetector {
         this._confidence = 0;
         this._stableStart = 0;
         this._lastEmitted = 'neutral';
+        this._pendingEmotion = 'neutral';
         this._onEmotion = null;
         this._onDebug = null;
         this.ready = false;
@@ -166,13 +167,15 @@ export class FaceEmotionDetector {
 
         // ── Step 7: Stability gate — only emit after STABLE_MS of same label ──
         const now = Date.now();
-        if (dom !== this._lastEmitted) {
-            // Dominant changed → reset stability clock
+
+        // If dominant winner changed, reset the stability timer
+        if (dom !== this._pendingEmotion) {
+            this._pendingEmotion = dom;
             this._stableStart = now;
         }
 
-        // Emit if the dominant has been stable for long enough
-        if ((now - this._stableStart) >= STABLE_MS && dom !== this._lastEmitted) {
+        // Emit only if it's different from what we last sent AND it has been stable
+        if (dom !== this._lastEmitted && (now - this._stableStart) >= STABLE_MS) {
             this._lastEmitted = dom;
             if (this._onEmotion) {
                 this._onEmotion(dom, domVotes, smoothed);

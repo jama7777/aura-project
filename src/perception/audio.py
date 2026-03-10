@@ -20,8 +20,8 @@ def load_audio_models():
     global model, emotion_model
     if model is None:
         try:
-            print("Loading Whisper model (tiny)...")
-            model = whisper.load_model("tiny")
+            print("Loading Whisper model (base)...")
+            model = whisper.load_model("base")
             print("Whisper model loaded.")
         except Exception as e:
             print(f"Error loading Whisper model: {e}")
@@ -30,14 +30,29 @@ def load_audio_models():
 
     if emotion_model is None:
         try:
-            print("Loading Audio Emotion model (Transformers)...")
+            print("Loading Audio Emotion model (high-accuracy, 8 emotions)...")
             from transformers import pipeline
-            # Use a robust model from HuggingFace
-            emotion_model = pipeline("audio-classification", model="superb/wav2vec2-base-superb-er")
-            print("Audio Emotion model loaded (Transformers).")
+            # ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition
+            # — XLS-R Large fine-tuned for speech emotion, 8 labels, much higher accuracy
+            # than the old superb/wav2vec2-base-superb-er (4 labels only)
+            emotion_model = pipeline(
+                "audio-classification",
+                model="ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition",
+                top_k=1
+            )
+            print("Audio Emotion model loaded (XLS-R Large, 8 emotions).")
         except Exception as e:
-            print(f"Error loading Audio Emotion model: {e}")
-            emotion_model = None
+            print(f"Error loading XLS-R emotion model ({e}), falling back to base model...")
+            try:
+                emotion_model = pipeline(
+                    "audio-classification",
+                    model="superb/wav2vec2-large-superb-er",   # Large version of SUPERB
+                    top_k=1
+                )
+                print("Audio Emotion fallback model loaded (wav2vec2-large-superb-er).")
+            except Exception as e2:
+                print(f"Error loading fallback emotion model: {e2}")
+                emotion_model = None
 
 def load_text_emotion_model():
     global text_emotion_classifier
@@ -121,24 +136,39 @@ def analyze_emotion_file(file_path):
     global emotion_model
     if emotion_model is None:
         load_audio_models()
-        
+
     if emotion_model:
         try:
-            # Classify using Transformers Pipeline
-            # Returns list of dicts: [{'score': 0.9, 'label': 'neutral'}, ...]
             preds = emotion_model(file_path)
-            # Get top prediction
             top_pred = preds[0]
-            label = top_pred['label']
-            
-            # Map labels if needed (Superb model uses abbreviations)
+            label = top_pred['label'].lower()
+            score = top_pred['score']
+
+            # Map all model label variants → AURA emotion vocabulary
             label_map = {
-                "neu": "neutral",
-                "hap": "happy",
-                "ang": "angry",
-                "sad": "sad",
+                # XLS-R 8-emotion labels (ehcalabres/wav2vec2-lg-xlsr model)
+                "angry":     "angry",
+                "calm":      "neutral",
+                "disgust":   "neutral",
+                "fearful":   "sad",
+                "fear":      "sad",
+                "happy":     "happy",
+                "neutral":   "neutral",
+                "sad":       "sad",
+                "surprise":  "surprised",
+                "surprised": "surprised",
+                # Old SUPERB abbreviations (fallback model)
+                "neu":       "neutral",
+                "hap":       "happy",
+                "ang":       "angry",
+                # Misc extras some models use
+                "excited":   "happy",
+                "boredom":   "neutral",
+                "frustrated":"angry",
             }
-            return label_map.get(label, label)
+            mapped = label_map.get(label, "neutral")
+            print(f"[AudioEmotion] raw={label} ({score:.2f}) → mapped={mapped}")
+            return mapped
         except Exception as e:
             print(f"Audio Emotion classification failed: {e}")
             return "neutral"

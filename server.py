@@ -8,12 +8,30 @@ import time
 import uuid
 from pydantic import BaseModel
 
+# ── ffmpeg path resolution ─────────────────────────────────────────────────────
+# On Apple Silicon Macs, Homebrew installs to /opt/homebrew/bin which is NOT
+# automatically on the PATH when launched by some tools. Patch it in here so
+# both subprocess calls and Python libraries (whisper, huggingface) can find it.
+FFMPEG_PATHS = [
+    '/opt/homebrew/bin/ffmpeg',   # Apple Silicon (M1/M2/M3)
+    '/usr/local/bin/ffmpeg',      # Intel Mac Homebrew
+    '/usr/bin/ffmpeg',            # Linux
+]
+FFMPEG_BIN = next((p for p in FFMPEG_PATHS if os.path.isfile(p)), 'ffmpeg')
+if FFMPEG_BIN != 'ffmpeg':
+    # Prepend the directory to PATH so child processes and libraries also find it
+    _ffmpeg_dir = os.path.dirname(FFMPEG_BIN)
+    os.environ['PATH'] = _ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
+    print(f'[server] ffmpeg found at: {FFMPEG_BIN} (added {_ffmpeg_dir} to PATH)')
+else:
+    print('[server] WARNING: ffmpeg not found in known paths — audio conversion may fail!')
+
 # Import Aura modules
 # Ensure src is in path
 import sys
 sys.path.append(os.getcwd())
 
-from src.core.brain import process_input
+from src.core.brain import process_input, clear_conversation_history
 from src.output.tts import speak, load_tts_model
 from src.perception.audio import transcribe_audio_file, analyze_emotion_file, load_audio_models, load_text_emotion_model
 from src.perception.nv_ace import ace_client
@@ -57,15 +75,58 @@ async def startup_event():
 class ChatRequest(BaseModel):
     text: str
     emotion: str = "neutral"
+    face_emotion: str = "neutral"   # from camera/face detection (separate channel)
     gesture: str = "none"
-    provider: str = "auto"  # "auto", "nvidia", "openrouter", "local"
+    provider: str = "auto"
+
+# Emotion priority weights — higher = more trusted source
+EMOTION_WEIGHTS = {
+    'audio': 0.70,  # audio tone of voice (from Wav2Vec2)
+    'text':  0.65,  # words the user said / typed
+    'face':  0.30,  # face camera detection (less reliable in real use)
+}
+EMOTION_PRIORITY = ['happy','excited','joy','sad','angry','surprised','love','fear','disgust','confused','thinking','neutral']
+
+def fuse_emotions(text_or_audio_emotion: str, face_emotion: str) -> str:
+    """
+    Blend multiple emotion signals into one.
+    Rule:
+      - If both agree → return that emotion (boosted confidence, no change needed)
+      - If face is neutral → trust audio/text fully
+      - If audio/text is neutral → trust face at lower weight
+      - If they conflict → audio/text wins (higher weight)
+    """
+    a = (text_or_audio_emotion or 'neutral').lower()
+    f = (face_emotion or 'neutral').lower()
+
+    if a == f:
+        return a                          # perfect agreement
+    if a == 'neutral' and f != 'neutral':
+        return f                          # only face has signal
+    # audio/text always wins over face in a conflict
+    return a
+
+@app.post("/api/clear-history")
+async def clear_history_endpoint():
+    """Reset the in-session conversation history. Called by the frontend on page load."""
+    clear_conversation_history()
+    return {"status": "cleared"}
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
-    print(f"Received chat: {request.text} ({request.emotion}), Gesture: {request.gesture}, Provider: {request.provider}")
-    # Process input
+    # Fuse camera face emotion + text/speech emotion before sending to brain
+    fused_emotion = fuse_emotions(request.emotion, request.face_emotion)
+    print(f"Received chat: {request.text} | text_emo={request.emotion} face_emo={request.face_emotion} → fused={fused_emotion} | Gesture: {request.gesture}")
+
+    # Process input — pass both the fused emotion AND the raw face emotion so
+    # the brain can detect conflicts between what the face shows vs what words say
     processed_result = process_input(
-        {"text": request.text, "emotion": request.emotion, "gesture": request.gesture},
+        {
+            "text": request.text,
+            "emotion": fused_emotion,          # primary emotion (text/audio wins in conflict)
+            "face_emotion": request.face_emotion,  # raw camera emotion for conflict detection
+            "gesture": request.gesture
+        },
         provider=request.provider
     )
     response_text = processed_result["text"]
@@ -269,7 +330,7 @@ async def process_a2f(request: A2FRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/audio")
-async def upload_audio(file: UploadFile = File(...)):
+async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral")):
     import subprocess
     
     # Save the uploaded audio file
@@ -300,7 +361,7 @@ async def upload_audio(file: UploadFile = File(...)):
         print("Converting to WAV format using FFmpeg...")
         try:
             result = subprocess.run([
-                'ffmpeg', '-y', '-i', raw_filename,
+                FFMPEG_BIN, '-y', '-i', raw_filename,
                 '-ar', '16000',  # 16kHz sample rate (optimal for Whisper)
                 '-ac', '1',      # Mono audio
                 '-f', 'wav',     # Output format
@@ -344,10 +405,18 @@ async def upload_audio(file: UploadFile = File(...)):
         print("No speech detected in audio")
         return {"input_text": None, "text": None, "audio_url": None, "animations": ["idle"]}
         
-    print(f"Transcribed: '{text}', Emotion: {emotion}")
-    
-    # Process
-    processed_result = process_input({"text": text, "emotion": emotion})
+    print(f"Transcribed: '{text}', Audio Emotion: {emotion} | Face Emotion: {face_emotion}")
+
+    # Fuse audio-detected emotion with face-camera emotion for richer context
+    fused_emotion = fuse_emotions(emotion, face_emotion)
+    print(f"Fused Emotion → {fused_emotion} (audio={emotion}, face={face_emotion})")
+
+    # Process — pass both fused emotion and raw face emotion for conflict detection
+    processed_result = process_input({
+        "text": text,
+        "emotion": fused_emotion,
+        "face_emotion": face_emotion   # raw camera emotion for conflict detection
+    })
     response_text = processed_result["text"]
     response_emotion = processed_result["emotion"]
     
@@ -378,7 +447,9 @@ async def upload_audio(file: UploadFile = File(...)):
     
     return {
         "input_text": text,
-        "input_emotion": emotion,
+        "input_emotion": emotion,           # audio-detected emotion
+        "face_emotion": face_emotion,       # camera face emotion
+        "fused_emotion": fused_emotion,     # what was actually sent to the brain
         "text": response_text,
         "emotion": response_emotion,
         "audio_url": audio_url,
@@ -388,10 +459,12 @@ async def upload_audio(file: UploadFile = File(...)):
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
+    print(f"[Audio endpoint] Requested: {filename}")
     file_path = os.path.abspath(filename)
     if os.path.exists(file_path):
         return FileResponse(file_path)
-    return HTTPException(status_code=404, detail="File not found")
+    print(f"[Audio endpoint] File not found: {file_path}")
+    raise HTTPException(status_code=404, detail="File not found")
 
 @app.get("/")
 async def read_index():
@@ -406,3 +479,90 @@ async def animation_studio():
 async def gesture_studio():
     """Gesture / Body Animation Studio"""
     return FileResponse("web/gesture_studio.html")
+
+@app.get("/voice-test")
+async def voice_test():
+    """Voice command input & emotion detection test lab"""
+    return FileResponse("web/voice_test.html")
+
+@app.post("/api/voice-test")
+async def voice_test_api(file: UploadFile = File(...)):
+    """
+    Dedicated endpoint for the Voice Test Lab.
+    Returns rich emotion analysis with the transcript.
+    """
+    import subprocess
+
+    raw_filename = f"temp_raw_{uuid.uuid4()}"
+    wav_filename = f"temp_{uuid.uuid4()}.wav"
+
+    with open(raw_filename, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    file_size = os.path.getsize(raw_filename)
+    print(f"[VoiceTest] Processing audio: {raw_filename} ({file_size} bytes)")
+
+    # Check WAV header
+    is_wav = False
+    try:
+        with open(raw_filename, 'rb') as f:
+            header = f.read(12)
+            is_wav = header[:4] == b'RIFF' and header[8:12] == b'WAVE'
+    except:
+        pass
+
+    if is_wav:
+        os.rename(raw_filename, wav_filename)
+    else:
+        try:
+            result = subprocess.run([
+                FFMPEG_BIN, '-y', '-i', raw_filename,
+                '-ar', '16000', '-ac', '1', '-f', 'wav', wav_filename
+            ], capture_output=True, text=True, timeout=15)
+            if result.returncode != 0:
+                os.rename(raw_filename, wav_filename)
+        except Exception:
+            os.rename(raw_filename, wav_filename)
+        finally:
+            if os.path.exists(raw_filename):
+                os.remove(raw_filename)
+
+    if not os.path.exists(wav_filename) or os.path.getsize(wav_filename) < 100:
+        return JSONResponse({"success": False, "error": "Audio file too small or missing"})
+
+    # Transcribe
+    transcript = transcribe_audio_file(wav_filename)
+    # Analyze emotion
+    audio_emotion = analyze_emotion_file(wav_filename)
+
+    # Cleanup
+    try:
+        if os.path.exists(wav_filename):
+            os.remove(wav_filename)
+    except:
+        pass
+
+    print(f"[VoiceTest] Transcript: '{transcript}' | Audio Emotion: {audio_emotion}")
+
+    # Also run text emotion if transcript found
+    text_emotion = None
+    if transcript and transcript.strip():
+        from src.perception.audio import text_emotion_classifier
+        if text_emotion_classifier:
+            try:
+                result = text_emotion_classifier(transcript)
+                if result and result[0]:
+                    text_emotion = result[0][0]['label'].lower()
+            except Exception as e:
+                print(f"Text emotion error: {e}")
+
+    return JSONResponse({
+        "success": bool(transcript and transcript.strip()),
+        "transcript": transcript or "",
+        "audio_emotion": audio_emotion,
+        "text_emotion": text_emotion,
+        "emotions": [
+            {"emotion": audio_emotion, "source": "audio", "confidence": 0.85},
+            {"emotion": text_emotion or "N/A", "source": "text", "confidence": 0.80} if text_emotion else None
+        ]
+    })

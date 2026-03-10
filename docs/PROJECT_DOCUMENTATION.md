@@ -965,4 +965,240 @@ For issues and feature requests, please open a GitHub issue.
 ---
 
 *Documentation generated on: January 9, 2025*
-*Last updated: January 9, 2025*
+*Last updated: February 23, 2026*
+
+---
+
+## 🔄 Step-by-Step Input Flow & Output Pipeline
+
+This section provides a **complete, granular trace** of how every input travels through AURA and becomes a rich, animated response.
+
+---
+
+### 🏗️ System-Level Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     BROWSER (Frontend)                           │
+│   index.html ← main.js ← avatar.js, gesture.js, face_emotion.js │
+└────────────────────────┬─────────────────────────────────────────┘
+                         │ HTTP fetch API
+┌────────────────────────▼─────────────────────────────────────────┐
+│               FastAPI SERVER  (server.py)                        │
+│   /api/chat   /api/audio   /a2f   /api/animate   /api/updates    │
+└──────┬──────────────┬───────────────────────┬────────────────────┘
+       │              │                       │
+  brain.py        audio.py             tts.py + nv_ace.py
+  (AI/LLM)    (Whisper+Emotion)     (Voice + Lip Sync)
+```
+
+---
+
+### 📥 INPUT PATH 1 — Text Chat
+
+**Flow:** User types → AI processes → Avatar responds
+
+| Step | File | What Happens |
+|------|------|--------------|
+| **1** | `index.html` | User types in `<input id="text-input">` and presses Enter or clicks Send |
+| **2** | `main.js → sendMessage()` | Reads the text, calls local `detectEmotionFromText()` using keyword matching (e.g. "happy", "sad", "love") |
+| **3** | `main.js` | Sends `POST /api/chat` with `{ text, emotion }` JSON body |
+| **4** | `server.py → /api/chat` | Receives the request and calls `process_input()` from `brain.py` |
+| **5** | `brain.py → process_input()` | Queries **ChromaDB memory** for the 3 most relevant past interactions, then constructs a prompt: `"User said: '...' Emotion: ... Gesture: ..."` |
+| **6** | `brain.py` | Calls **NVIDIA NIM** (llama3-70b) or **OpenRouter** (GPT-4o-mini). LLM reply ends with `[[emotion]]` tag e.g. `"Sure! [[happy]]"`. Regex extracts the emotion. |
+| **7** | `server.py` | Calls `speak(response_text)` → `tts.py` generates a `.wav` audio file via **Coqui TTS** (Tacotron2-DDC model), saved with a UUID filename |
+| **8** | `server.py` | Calls `ace_client.process_audio()` → `nv_ace.py` sends the WAV to **NVIDIA ACE Audio2Face-3D** via gRPC and receives per-frame blendshape weights for lip sync |
+| **9** | `server.py` | Determines body animations via priority: Gesture → LLM Emotion → User Emotion → keywords → `"idle"` |
+| **10** | `server.py` | Returns JSON: `{ text, emotion, audio_url, animations[], face_animation[] }` |
+| **11** | `main.js → handleResponse()` | Calls `avatar.transitionToEmotion()`, plays audio, starts `startFaceSync()` using `requestAnimationFrame` |
+| **12** | `avatar.js` | 3D avatar performs body animation + real-time facial blendshapes synced to audio playback |
+
+---
+
+### 🎤 INPUT PATH 2 — Voice (Microphone)
+
+**Flow:** User speaks → recording → transcription → AI processes → Avatar responds
+
+| Step | File | What Happens |
+|------|------|--------------|
+| **1** | `main.js → toggleMicrophone()` | User clicks mic button → `startRecording()` is called |
+| **2** | `main.js → startRecording()` | `navigator.mediaDevices.getUserMedia()` opens microphone. `MediaRecorder` records in **webm/opus or mp4** (chunks every 500ms) |
+| **3** | `main.js → stopRecording()` | User clicks again → recording stops, `onstop` fires → `sendAudioToServer()` |
+| **4** | `main.js → sendAudioToServer()` | Plays back the recording locally first (user hears themselves), then calls `sendToServerForTranscription()` |
+| **5** | `main.js` | Audio blob sent as `FormData` via `POST /api/audio` |
+| **6** | `server.py → /api/audio` | Receives file. Checks RIFF/WAVE header. If not WAV, **FFmpeg** converts to 16kHz mono WAV |
+| **7** | `audio.py → transcribe_audio_file()` | **OpenAI Whisper (tiny model)** transcribes speech → returns text string. Saves a debug copy to `debug_last_audio.wav` |
+| **8** | `audio.py → analyze_emotion_file()` | **wav2vec2-base-superb-er** (HuggingFace) classifies audio tone → returns "neutral", "happy", "angry", or "sad" |
+| **9** | `server.py` | Calls `process_input({text, emotion})` → same LLM + Memory pipeline as the text path |
+| **10** | `server.py` | Generates TTS audio + NVIDIA ACE lip sync frames + body animations |
+| **11** | `main.js` | Displays transcribed text as user message, calls `handleResponse()` → avatar animates and speaks |
+
+---
+
+### 📷 INPUT PATH 3 — Camera (Face Emotion + Hand Gesture)
+
+These two sub-systems run **continuously in the background** while the camera is on.
+
+---
+
+#### 😊 Sub-path A: Face Emotion Detection
+
+**Flow:** Camera feed → face-api.js → smoothed emotion → Avatar reacts
+
+| Step | File | What Happens |
+|------|------|--------------|
+| **1** | `main.js → toggleCamera()` | User clicks camera button → `getUserMedia({ video: true })` opens webcam |
+| **2** | `main.js → startFaceDetection()` | Creates `FaceEmotionDetector` instance from `face_emotion.js` |
+| **3** | `face_emotion.js → _detect()` | Every **120ms**, sends a video frame to **face-api.js TinyFaceDetector** (224×224 input, score threshold 0.4) |
+| **4** | `face_emotion.js` | Gets 7 raw expression scores: happy, sad, angry, surprised, disgusted, fearful, neutral from **faceExpressionNet** |
+| **5** | `face_emotion.js` | Picks the frame winner only if `score > 0.55` (CONF_THRESHOLD), else defaults to neutral |
+| **6** | `face_emotion.js` | Applies **12-frame rolling majority vote** — dominant emotion must win ≥ 45% of window |
+| **7** | `face_emotion.js` | **Stability gate**: dominant emotion must hold for **1200ms** before emitting to avoid flickers |
+| **8** | `main.js → onEmotion callback` | Updates `currentEmotion` variable, updates status bar text, shows emotion on avatar face via `avatar.showEmotion()` |
+| **9** | `main.js` | **Auto-trigger** logic: if emotion sustained 1.5s + confidence >0.35 + 6s cooldown + AURA not talking → sends `POST /api/chat` with detected emotion for a full AI reaction |
+
+---
+
+#### 👋 Sub-path B: Hand Gesture Recognition
+
+**Flow:** Camera feed → MediaPipe Hands → Landmark analysis → Gesture → AI reacts
+
+| Step | File | What Happens |
+|------|------|--------------|
+| **1** | `gesture.js → GestureHandler.init()` | Initializes **MediaPipe Hands** CDN model (1 hand max, min confidence 0.5) |
+| **2** | `gesture.js → processVideo()` | Each `requestAnimationFrame`, sends the video element to `this.hands.send()` |
+| **3** | `gesture.js → detectGesture()` | Analyzes 21 hand landmarks; classifies finger open/closed by comparing tip Y vs PIP joint Y |
+| **4** | `gesture.js` | Classifies into: `victory` ✌️ (index+middle open), `thumbs_up` 👍 (thumb only, pointing up), `open_palm` 🖐️ (all open), `fist` ✊ (all closed) |
+| **5** | `gesture.js → triggerAction()` | Immediately plays a local avatar animation for instant visual feedback (dance, happy, clap, idle) |
+| **6** | `main.js → GestureHandler callback` | **Guard check**: if AURA is currently speaking (`isAuraTalking = true`), the gesture is silently ignored |
+| **7** | `main.js` | If AURA is not talking and a 2s cooldown has passed → sends `POST /api/chat` with `{ gesture, emotion }` |
+| **8** | `brain.py` | LLM generates gesture-aware response (e.g., "Peace! ✌️", "Awesome! 👍", "High five! 🖐️") |
+| **9** | Avatar responds | Full pipeline: voice output + lip sync + body animation |
+
+---
+
+### 📤 OUTPUT PIPELINE (All Paths Share This)
+
+```
+AI Response Text
+     │
+     ▼
+[TTS — Coqui Tacotron2-DDC]
+     → Generates output_<uuid>.wav audio file
+     │
+     ▼
+[NVIDIA ACE Audio2Face-3D — gRPC]
+     → Sends WAV audio + emotion weights
+     → Receives per-frame blendshape data (52 ARKit shapes @ ~30fps)
+     │
+     ▼
+[server.py]
+     → Returns complete JSON response
+     │
+     ▼
+[main.js → handleResponse()]
+     ├── addMessage()              → text appears in chat bubble
+     ├── avatar.transitionToEmotion() → body animation starts
+     ├── new Audio(audio_url).play()  → voice plays in browser
+     ├── startFaceSync()           → real-time lip sync loop begins
+     │     └── requestAnimationFrame loop:
+     │           ├── Binary search: find frame closest to audio.currentTime
+     │           ├── Cubic interpolation between frames (smooth)
+     │           ├── Phoneme boost: 2.0x for mouth shapes, 1.5x for others
+     │           └── avatar.updateFace(blendshapes, emotion)
+     └── avatar.playSequence(animations[])
+           └── Returns to 'idle' when sequence completes
+```
+
+---
+
+### 🎭 Avatar Output Layers
+
+| Layer | What It Controls | Technology |
+|-------|----------------|------------|
+| **Lip Sync** | Jaw, mouthOpen, phoneme shapes (mouthFunnel, mouthPucker, etc.) | NVIDIA ACE gRPC blendshapes |
+| **Facial Expression** | eyeWide, browDown, mouthSmile, mouthFrown, cheekPuff | face-api.js + emotion mapping |
+| **Body Animation** | Full body: idle, dance, happy, sad, clap, pray, jump, crouch | FBX animations via Three.js |
+| **Voice** | TTS audio playback in browser | Coqui TTS Tacotron2-DDC |
+
+---
+
+### 🧠 Memory System (ChromaDB)
+
+Every interaction is **saved and recalled** automatically:
+
+```
+User sends a message
+     ↓
+brain.py queries ChromaDB for top-3 similar past interactions
+     ↓
+Context is injected into the LLM prompt:
+   "Memory Context: [past_entry_1], [past_entry_2], [past_entry_3]"
+     ↓
+LLM generates a contextually aware response
+     ↓
+brain.py saves the new interaction:
+   "User said: '...' Emotion: ... → AURA: '...'"
+     ↓
+Stored permanently in ./aura_memory.db (ChromaDB)
+```
+
+---
+
+### 🔌 Chrome Extension / External App Flow
+
+An additional input path allows external AI apps (ChatGPT, Grok, etc.) to drive the avatar:
+
+```
+Chrome Extension or External App
+     ↓
+POST /api/animate  { text: "...", emotion: "..." }
+     ↓
+server.py generates TTS + ace lip sync + animations
+server.py pushes to global_event_queue[]
+     ↓
+main.js polls GET /api/updates every 1 second
+     ↓
+If queue has data → handleResponse() → Avatar speaks
+```
+
+---
+
+### 🔒 Talking Guard System
+
+A critical system-level guard prevents race conditions:
+
+```javascript
+let isAuraTalking = false;
+
+// Set TRUE when audio starts playing
+audio.play().then(() => { isAuraTalking = true; });
+
+// Set FALSE when audio ends
+audio.onended = () => { isAuraTalking = false; };
+
+// Face emotion and gesture auto-triggers check this flag:
+if (isAuraTalking) return; // ← silently skip while AURA is speaking
+```
+This ensures that face emotion detections and hand gestures never interrupt or stack on an ongoing AURA reply.
+
+---
+
+### 📁 Key Files — Quick Reference
+
+| File | Role |
+|------|------|
+| `server.py` | FastAPI backend — all API routes, response assembly |
+| `src/core/brain.py` | AI brain — LLM calls + ChromaDB memory |
+| `src/perception/audio.py` | Whisper STT + wav2vec2 audio emotion |
+| `src/output/tts.py` | Coqui TTS voice generation |
+| `src/perception/nv_ace.py` | NVIDIA ACE lip sync via gRPC |
+| `web/static/js/main.js` | Frontend orchestrator — all UI events and pipeline coordination |
+| `web/static/js/avatar.js` | Three.js 3D avatar control and animation |
+| `web/static/js/gesture.js` | MediaPipe Hands gesture recognition |
+| `web/static/js/face_emotion.js` | face-api.js facial emotion detection with majority-vote smoothing |
+
+---
+
+*Step-by-Step Flow section added: February 23, 2026*
+

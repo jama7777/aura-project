@@ -16,11 +16,18 @@ export class Avatar {
         this.clock = new THREE.Clock();
         this.isTalking = false;
         this.debugDiv = null;
-        this.faceMesh = null; // Store mesh with morph targets
-        this.morphTargetDictionary = {}; // Store name to index mapping
-        this.currentEmotion = 'neutral'; // Track current emotion state
-        this.emotionAnimationQueue = []; // Queue for emotion-triggered animations
-        this.isPlayingEmotionAnimation = false; // Track if emotion animation is playing
+        this.faceMesh = null;
+        this.morphTargetDictionary = {};
+        this.currentEmotion = 'neutral';
+        this.emotionAnimationQueue = [];
+        this.isPlayingEmotionAnimation = false;
+        // Eye idle system
+        this._eyeIdleRunning = false;
+        this._eyeIdleFrame = null;
+        this._eyeBlinkTimeout = null;
+        this._eyeLookTimeout = null;
+        // Emotional recovery
+        this._recoveryId = 0;
     }
 
     log(msg) {
@@ -328,7 +335,7 @@ export class Avatar {
     loadFBXAnimations() {
         // Map the user's downloaded Mixamo animations to our emotion system names
         const animationMap = {
-            'idle': 'Catwalk Walk Turn 180 Tight.fbx',  // Use walk as idle
+            'idle': 'Catwalk Idle To Twist R.fbx',  // Cat walk idle
             'happy': 'Sitting Laughing.fbx',
             'dance': 'Hip Hop Dancing.fbx',
             'clap': 'Clapping.fbx',
@@ -392,35 +399,55 @@ export class Avatar {
     playAnimation(name, loopOnce = false) {
         if (!this.mixer) return;
 
-        // Fallback
         if (!this.animations[name]) {
             console.warn(`Animation ${name} not found.`);
             return;
         }
 
         const action = this.animations[name];
-        if (this.currentAction !== action) {
-            if (this.currentAction) this.currentAction.fadeOut(0.5);
+        const isIdle = (name === 'idle');
+        const shouldSwitch = isIdle || (this.currentAction !== action);
 
-            action.reset().fadeIn(0.5);
-            action.clampWhenFinished = true;
+        if (shouldSwitch) {
+            if (this.currentAction && this.currentAction !== action) {
+                this.currentAction.fadeOut(0.5);
+            }
+
+            action.reset().fadeIn(0.3);
+            action.clampWhenFinished = loopOnce;
 
             if (loopOnce) {
+                // Play once, then auto-return to idle
                 action.setLoop(THREE.LoopOnce);
-                // When finished, go back to idle
-                this.mixer.addEventListener('finished', (e) => {
+                if (this._finishedListener) {
+                    this.mixer.removeEventListener('finished', this._finishedListener);
+                }
+                this._finishedListener = (e) => {
                     if (e.action === action) {
+                        this.mixer.removeEventListener('finished', this._finishedListener);
+                        this._finishedListener = null;
                         this.playAnimation('idle');
                     }
-                });
+                };
+                this.mixer.addEventListener('finished', this._finishedListener);
+                // Stop eye idle while emotion animation plays
+                this.stopIdleEyes();
+            } else if (isIdle) {
+                // Idle ping-pongs: front → twist → front → ...
+                action.setLoop(THREE.LoopPingPong);
+                action.clampWhenFinished = false;
+                // Start eye idle system as soon as idle kicks in
+                setTimeout(() => this.startIdleEyes(), 300);
             } else {
                 action.setLoop(THREE.LoopRepeat);
+                this.stopIdleEyes();
             }
 
             action.play();
             this.currentAction = action;
         }
     }
+
 
     playIntroSequence() {
         this.log("Playing Intro Sequence...");
@@ -474,11 +501,74 @@ export class Avatar {
 
     setTalking(talking) {
         this.isTalking = talking;
-        // If we have face animations, we don't rely on this boolean as much for jaw movement
-        if (!talking) {
-            // Reset face if needed
-            this.resetFace();
+        if (talking) {
+            // Eyes keep blinking/looking while AURA speaks — do NOT stop them
+            // (lip sync uses mouth/jaw shapes, eyes are independent)
+        } else {
+            // Talking finished — gradually recover face to neutral instead of instant snap
+            this.gradualEmotionalRecovery();
         }
+    }
+
+    /**
+     * Slowly fade the current emotional face expression back to neutral.
+     * Uses ease-in curve: face holds emotion at first, then softly dissolves.
+     * Like watching a real person's expression gradually relax.
+     * @param {number} duration — ms for the full recovery (default 4000ms)
+     */
+    gradualEmotionalRecovery(duration = 4000) {
+        if (!this.faceMesh) return;
+
+        // Emotion-specific recovery speeds:
+        // Sad lingers longest, happy fades quicker, neutral is instant
+        const emotionDurations = {
+            'sad': 5000, 'sadness': 5000, 'depressed': 5500,
+            'angry': 3500, 'frustrated': 3000,
+            'happy': 2500, 'joy': 2000, 'excited': 2000,
+            'surprised': 1500, 'shocked': 1500,
+            'fear': 3000, 'scared': 3000,
+            'love': 3000, 'neutral': 0
+        };
+        const actualDuration = emotionDurations[this.currentEmotion] ?? duration;
+        if (actualDuration === 0) return; // Already neutral, nothing to do
+
+        const startInfluences = [...this.faceMesh.morphTargetInfluences];
+        // Check if there's anything to fade at all (skip if all zeroes)
+        const hasExpression = startInfluences.some(v => v > 0.01);
+        if (!hasExpression) return;
+
+        const startTime = performance.now();
+        // Tag this recovery so a new one can cancel the old one
+        const recoveryId = ++this._recoveryId;
+
+        this.log(`Emotional recovery: ${this.currentEmotion} → neutral over ${actualDuration}ms`);
+
+        const recover = () => {
+            // If a newer recovery started, stop this one
+            if (this._recoveryId !== recoveryId) return;
+
+            const elapsed = performance.now() - startTime;
+            const t = Math.min(1, elapsed / actualDuration);
+
+            // ease-in (quadratic): slow start = holds emotion, fast end = quick dissolve
+            // feels like real emotional fade: "still sad... still sad... ok better now"
+            const eased = t * t;
+
+            for (let i = 0; i < startInfluences.length; i++) {
+                if (startInfluences[i] > 0) {
+                    this.faceMesh.morphTargetInfluences[i] = startInfluences[i] * (1 - eased);
+                }
+            }
+
+            if (t < 1) {
+                requestAnimationFrame(recover);
+            } else {
+                this.currentEmotion = 'neutral';
+                this.log('Emotional recovery complete → neutral');
+            }
+        };
+
+        requestAnimationFrame(recover);
     }
 
     updateFace(blendshapes, emotion = "neutral") {
@@ -839,9 +929,16 @@ export class Avatar {
                 requestAnimationFrame(animate);
             } else {
                 this.currentEmotion = targetEmotion;
-                // Trigger body animation after facial transition completes
-                if (triggerAnimation && targetEmotion !== 'neutral') {
-                    this.playEmotionAnimation(targetEmotion, 1.0);
+                if (triggerAnimation) {
+                    if (targetEmotion === 'neutral') {
+                        // Neutral → always return to looping idle (unfreeze any stuck state)
+                        if (!this.isPlayingEmotionAnimation) {
+                            this.playAnimation('idle');
+                        }
+                    } else {
+                        // Non-neutral → trigger matching body animation
+                        this.playEmotionAnimation(targetEmotion, 1.0);
+                    }
                 }
             }
         };
@@ -851,8 +948,8 @@ export class Avatar {
 
     resetFace() {
         if (!this.faceMesh) return;
-        // Smoothly reset to neutral
-        this.transitionToEmotion("neutral", 300, false); // Don't trigger body animation on reset
+        // Fast snap to neutral (used only in edge cases — normal flow uses gradualEmotionalRecovery)
+        this.transitionToEmotion("neutral", 300, false);
     }
 
     /**
@@ -933,6 +1030,16 @@ export class Avatar {
                 medium: ['sad'],
                 low: ['sad']
             },
+            'fearful': {
+                high: ['sad', 'crouch'],
+                medium: ['sad'],
+                low: ['sad']
+            },
+            'disgusted': {
+                high: ['sad'],
+                medium: ['sad'],
+                low: ['sad']
+            },
             'love': {
                 high: ['hug', 'happy'],                // Warm, open gestures
                 medium: ['hug'],
@@ -998,23 +1105,32 @@ export class Avatar {
                 this.log(`To add animations, load a model with animation clips (e.g., from Mixamo)`);
                 this.warnedNoAnimations = true;
             }
-            this.processEmotionQueue(); // Clear queue since we can't play animations
+            this.processEmotionQueue();
             return;
         }
 
-        // Don't interrupt if already playing an emotion animation
+        const animationName = this.getAnimationForEmotion(emotion, intensity);
+
+        // For neutral/idle emotions — just smoothly loop idle, never mark as "playing emotion"
+        if (animationName === 'idle' || emotion.toLowerCase() === 'neutral') {
+            if (!this.isPlayingEmotionAnimation) {
+                this.playAnimation('idle'); // looping, never gets stuck
+            }
+            this.processEmotionQueue();
+            return;
+        }
+
+        // Don't interrupt if already playing a non-idle emotion animation
         if (this.isPlayingEmotionAnimation) {
             this.log(`Emotion animation already playing, queueing ${emotion}`);
             this.emotionAnimationQueue.push({ emotion, intensity });
             return;
         }
 
-        const animationName = this.getAnimationForEmotion(emotion, intensity);
-
         // Check if this specific animation exists
         if (!this.animations[animationName]) {
             this.log(`Animation '${animationName}' not found, skipping emotion animation`);
-            this.processEmotionQueue(); // Try next in queue
+            this.processEmotionQueue();
             return;
         }
 
@@ -1024,29 +1140,36 @@ export class Avatar {
         // Play the animation once
         this.playAnimation(animationName, true);
 
-        // Set up completion handler
-        // Animations typically last 2-4 seconds, we'll wait for the mixer to signal completion
-        const checkCompletion = () => {
-            if (this.currentAction && this.currentAction.isRunning()) {
-                // Still running, check again
-                requestAnimationFrame(checkCompletion);
-            } else {
-                // Animation finished
+        // Use the mixer 'finished' event to know when we're done (reliable, no polling loop)
+        const onEmotionFinished = (e) => {
+            if (e.action === this.animations[animationName]) {
+                this.mixer.removeEventListener('finished', onEmotionFinished);
                 this.isPlayingEmotionAnimation = false;
                 this.log(`Emotion animation completed: ${animationName}`);
 
-                // Return to idle if nothing is happening
+                // Return to idle if nothing active
                 if (!this.isTalking) {
                     this.playAnimation('idle');
                 }
 
-                // Process next queued emotion if any
+                // Process next queued emotion
                 this.processEmotionQueue();
             }
         };
+        this.mixer.addEventListener('finished', onEmotionFinished);
 
-        // Start checking for completion after a short delay
-        setTimeout(() => requestAnimationFrame(checkCompletion), 100);
+        // Safety timeout: if mixer 'finished' never fires (e.g. clip issue), release the lock
+        const safetyMs = ((this.animations[animationName]._clip &&
+            this.animations[animationName]._clip.duration) || 4) * 1000 + 1000;
+        setTimeout(() => {
+            if (this.isPlayingEmotionAnimation) {
+                this.mixer.removeEventListener('finished', onEmotionFinished);
+                this.isPlayingEmotionAnimation = false;
+                this.log(`Safety timeout released lock for: ${animationName}`);
+                if (!this.isTalking) this.playAnimation('idle');
+                this.processEmotionQueue();
+            }
+        }, safetyMs);
     }
 
     /**
@@ -1154,8 +1277,7 @@ export class Avatar {
     }
 
     playRandomIdle() {
-        // diverse idle animations if available
-        const idles = ['idle', 'breathing', 'looking_around']; // hypothetical
+        const idles = ['idle', 'breathing', 'looking_around'];
         const available = idles.filter(name => this.animations[name]);
         if (available.length > 0) {
             const random = available[Math.floor(Math.random() * available.length)];
@@ -1163,5 +1285,180 @@ export class Avatar {
         } else {
             this.playAnimation('idle');
         }
+    }
+
+    // ─── Idle Eye System ────────────────────────────────────────────────────
+    // Gives the avatar natural blinking + subtle eye look-around during idle.
+    // Automatically stops when a non-idle animation plays.
+
+    startIdleEyes() {
+        if (this._eyeIdleRunning) return;
+        this._eyeIdleRunning = true;
+        this.log('👁 Idle eye system started');
+        this._scheduleNextBlink();
+        this._scheduleNextLook();
+    }
+
+    stopIdleEyes() {
+        if (!this._eyeIdleRunning) return;
+        this._eyeIdleRunning = false;
+        clearTimeout(this._eyeBlinkTimeout);
+        clearTimeout(this._eyeLookTimeout);
+        if (this._eyeIdleFrame) cancelAnimationFrame(this._eyeIdleFrame);
+        this._eyeIdleFrame = null;
+        // Reset eye morph targets to 0
+        this._setEyeMorph('eyeBlinkLeft', 0);
+        this._setEyeMorph('eyeBlinkRight', 0);
+        this._setEyeLook(0, 0); // centre
+        this.log('👁 Idle eye system stopped');
+    }
+
+    // Set a single eye morph target by name (no-op if not present)
+    _setEyeMorph(name, value) {
+        if (!this.faceMesh || !this.morphTargetDictionary) return;
+        const key = this.findMorphTarget(name);
+        if (key === null) return;
+        const idx = this.morphTargetDictionary[key];
+        if (idx === undefined) return;
+        this.faceMesh.morphTargetInfluences[idx] = Math.max(0, Math.min(1, value));
+    }
+
+    // Set eye look direction. inOutL/R: + = look in (nose), - = look out
+    // upDown: + = look up, - = look down
+    _setEyeLook(horizontal, vertical) {
+        // Horizontal
+        if (horizontal >= 0) {
+            this._setEyeMorph('eyeLookInLeft', horizontal);
+            this._setEyeMorph('eyeLookInRight', horizontal);
+            this._setEyeMorph('eyeLookOutLeft', 0);
+            this._setEyeMorph('eyeLookOutRight', 0);
+        } else {
+            this._setEyeMorph('eyeLookOutLeft', -horizontal);
+            this._setEyeMorph('eyeLookOutRight', -horizontal);
+            this._setEyeMorph('eyeLookInLeft', 0);
+            this._setEyeMorph('eyeLookInRight', 0);
+        }
+        // Vertical
+        if (vertical >= 0) {
+            this._setEyeMorph('eyeLookUpLeft', vertical);
+            this._setEyeMorph('eyeLookUpRight', vertical);
+            this._setEyeMorph('eyeLookDownLeft', 0);
+            this._setEyeMorph('eyeLookDownRight', 0);
+        } else {
+            this._setEyeMorph('eyeLookDownLeft', -vertical);
+            this._setEyeMorph('eyeLookDownRight', -vertical);
+            this._setEyeMorph('eyeLookUpLeft', 0);
+            this._setEyeMorph('eyeLookUpRight', 0);
+        }
+    }
+
+    // Schedule the next random blink
+    _scheduleNextBlink() {
+        if (!this._eyeIdleRunning) return;
+        // Blink every 2–5 seconds randomly
+        const delay = 2000 + Math.random() * 3000;
+        this._eyeBlinkTimeout = setTimeout(() => {
+            if (!this._eyeIdleRunning) return;
+            this._doBlink();
+        }, delay);
+    }
+
+    // Animate a natural blink
+    _doBlink() {
+        if (!this._eyeIdleRunning) return;
+        const BLINK_MS = 120;   // close
+        const OPEN_MS = 100;   // reopen
+        const startClose = performance.now();
+
+        const closeStep = () => {
+            if (!this._eyeIdleRunning) return;
+            const t = Math.min(1, (performance.now() - startClose) / BLINK_MS);
+            this._setEyeMorph('eyeBlinkLeft', t);
+            this._setEyeMorph('eyeBlinkRight', t);
+            if (t < 1) {
+                this._eyeIdleFrame = requestAnimationFrame(closeStep);
+            } else {
+                // Fully closed — now open
+                const startOpen = performance.now();
+                const openStep = () => {
+                    if (!this._eyeIdleRunning) return;
+                    const t2 = Math.min(1, (performance.now() - startOpen) / OPEN_MS);
+                    this._setEyeMorph('eyeBlinkLeft', 1 - t2);
+                    this._setEyeMorph('eyeBlinkRight', 1 - t2);
+                    if (t2 < 1) {
+                        this._eyeIdleFrame = requestAnimationFrame(openStep);
+                    } else {
+                        // Schedule next blink
+                        this._scheduleNextBlink();
+                    }
+                };
+                this._eyeIdleFrame = requestAnimationFrame(openStep);
+            }
+        };
+        this._eyeIdleFrame = requestAnimationFrame(closeStep);
+    }
+
+    // Schedule a gentle random eye look shift
+    _scheduleNextLook() {
+        if (!this._eyeIdleRunning) return;
+        // New look direction every 1.5–4 seconds
+        const delay = 1500 + Math.random() * 2500;
+        this._eyeLookTimeout = setTimeout(() => {
+            if (!this._eyeIdleRunning) return;
+            this._doLookShift();
+        }, delay);
+    }
+
+    // Smoothly shift eyes to a new random look position
+    _doLookShift() {
+        if (!this._eyeIdleRunning) return;
+        // Emotion-biased look targets — eyes shift in emotionally appropriate directions
+        const emotionBias = {
+            'sad': { h: 0.00, v: -0.15 },  // downcast — looking at floor
+            'sadness': { h: 0.00, v: -0.15 },
+            'depressed': { h: 0.00, v: -0.20 },
+            'happy': { h: 0.05, v: 0.10 },  // bright upward, slightly outward
+            'joy': { h: 0.05, v: 0.12 },
+            'excited': { h: 0.08, v: 0.10 },  // wide open, outward
+            'thinking': { h: -0.12, v: 0.10 },  // classic thinking: up-left
+            'confused': { h: 0.08, v: 0.00 },  // sideways glance
+            'surprised': { h: 0.00, v: 0.15 },  // wide up
+            'angry': { h: 0.00, v: -0.08 },  // slightly down, intense
+            'love': { h: -0.02, v: 0.08 },  // soft upward gaze
+        };
+
+        const bias = emotionBias[this.currentEmotion] || { h: 0, v: 0 };
+
+        // Random wander around the bias point
+        const wander = 0.15;
+        const wanderV = 0.10;
+        const rawH = bias.h + (Math.random() - 0.5) * wander;
+        const rawV = bias.v + (Math.random() - 0.5) * wanderV;
+
+        // Clamp to reasonable range
+        const targetH = Math.max(-0.25, Math.min(0.25, rawH));
+        const targetV = Math.max(-0.25, Math.min(0.20, rawV));
+
+        const SHIFT_MS = 450;
+        const startTime = performance.now();
+        const curH = (this._curEyeH !== undefined) ? this._curEyeH : 0;
+        const curV = (this._curEyeV !== undefined) ? this._curEyeV : 0;
+
+        const shiftStep = () => {
+            if (!this._eyeIdleRunning) return;
+            const t = Math.min(1, (performance.now() - startTime) / SHIFT_MS);
+            const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            const h = curH + (targetH - curH) * eased;
+            const v = curV + (targetV - curV) * eased;
+            this._setEyeLook(h, v);
+            if (t < 1) {
+                this._eyeIdleFrame = requestAnimationFrame(shiftStep);
+            } else {
+                this._curEyeH = targetH;
+                this._curEyeV = targetV;
+                this._scheduleNextLook();
+            }
+        };
+        this._eyeIdleFrame = requestAnimationFrame(shiftStep);
     }
 }

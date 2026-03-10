@@ -1,10 +1,10 @@
-import { Avatar } from './avatar.js?v=5';
+import { Avatar } from './avatar.js?v=13';
 import { GestureHandler } from './gesture.js';
 import { FaceEmotionDetector } from './face_emotion.js';
 
 const avatar = new Avatar();
 window.avatar = avatar; // Debugging
-let currentEmotion = "neutral";
+let currentEmotion = "off";
 // Emotion Trigger State
 let lastTriggeredEmotion = null;
 let emotionStartTime = 0;
@@ -107,7 +107,16 @@ window._setAuraTalking = (v) => { isAuraTalking = v; };  // debug helper
 window._isLocked = () => _inputLocked;                   // debug helper
 
 const gestureHandler = new GestureHandler(avatar, (gesture) => {
-    // ── InputLock: block if any input is already in flight ──
+    // If VOICE is currently processing, play the animation locally but DON'T send
+    // a new API request — gesture animations still work, voice chat is uninterrupted.
+    if (_inputLocked && _lockSource === 'voice') {
+        log(`[Gesture] Voice processing — playing animation for ${gesture}, skip API call.`);
+        _playGestureAnimationOnly(gesture);
+        _showVoiceProcessingToast(gesture);
+        return;
+    }
+
+    // Normal path: grab lock and send gesture to backend
     if (!acquireInputLock('gesture')) return;
 
     log(`Sending gesture: ${gesture} (Emotion: ${currentEmotion})`);
@@ -121,9 +130,68 @@ const gestureHandler = new GestureHandler(avatar, (gesture) => {
         .then(data => handleResponse(data))
         .catch(err => {
             console.error("Error sending gesture:", err);
-            releaseInputLock();  // release on error so AURA doesn't freeze
+            releaseInputLock();
         });
 });
+
+/**
+ * Play a gesture's body animation without sending to the LLM.
+ * Used when voice is processing and we want gestures to still feel alive.
+ */
+function _playGestureAnimationOnly(gesture) {
+    const gestureAnimMap = {
+        wave: 'idle',
+        thumbs_up: 'happy',
+        victory: 'dance',
+        clap: 'clap',
+        dance: 'dance',
+        hug: 'happy',
+        fist: 'idle',
+        open_palm: 'idle',
+    };
+    const anim = gestureAnimMap[gesture] || 'idle';
+    if (avatar && avatar.playAnimation) {
+        avatar.playAnimation(anim, true);
+        // Return to idle after 3 seconds
+        setTimeout(() => {
+            if (avatar && avatar.playAnimation) avatar.playAnimation('idle');
+        }, 3000);
+    }
+}
+
+/**
+ * Show a small non-intrusive toast when a gesture is detected during voice processing.
+ */
+function _showVoiceProcessingToast(source) {
+    let toast = document.getElementById('voice-busy-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'voice-busy-toast';
+        toast.style.cssText = [
+            'position:absolute', 'bottom:90px', 'left:50%', 'transform:translateX(-50%)',
+            'background:rgba(108,92,231,0.88)', 'color:#fff', 'font-size:12px',
+            'padding:6px 16px', 'border-radius:20px', 'z-index:300',
+            'pointer-events:none', 'transition:opacity .4s', 'font-weight:500',
+            'white-space:nowrap', 'box-shadow:0 2px 10px rgba(0,0,0,0.3)'
+        ].join(';');
+        document.getElementById('ui-overlay').appendChild(toast);
+    }
+    const gestureEmoji = { wave: '👋', thumbs_up: '👍', victory: '✌️', clap: '👏', dance: '💃', hug: '🫂', fist: '✊', open_palm: '✋' };
+    if (source === 'text') {
+        toast.textContent = `🎤 Processing your voice… send text after!`;
+    } else {
+        const emoji = gestureEmoji[source] || '👋';
+        toast.textContent = `${emoji} Got your gesture! Still thinking about your voice message…`;
+    }
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => { toast.style.display = 'none'; }, 400);
+    }, 2500);
+}
+
 // ========== AUDIO RECORDING VARIABLES ==========
 let isRecording = false;        // Track if we're currently recording
 let mediaRecorder = null;       // MediaRecorder instance
@@ -146,6 +214,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('camera-btn').disabled = true;
         document.getElementById('camera-btn').style.opacity = '0.5';
         return;
+    }
+
+    // Clear the server-side conversation history on every fresh page load
+    try {
+        await fetch('/api/clear-history', { method: 'POST' });
+        log('[Session] Conversation history cleared for new session.');
+    } catch (e) {
+        log('[Session] Could not clear history (server may be starting up).');
     }
 
     window.onerror = function (message, source, lineno, colno, error) {
@@ -255,7 +331,14 @@ function setupEventListeners() {
 function triggerManualGesture(gesture) {
     log(`Manual Gesture Triggered: ${gesture}`);
 
-    // ── InputLock: only one request at a time ──
+    // If voice is processing, play animation only — don't interrupt
+    if (_inputLocked && _lockSource === 'voice') {
+        _playGestureAnimationOnly(gesture);
+        _showVoiceProcessingToast(gesture);
+        return;
+    }
+
+    // Normal path
     if (!acquireInputLock('gesture')) return;
 
     addMessage(`(Gesture: ${gesture})`, 'user');
@@ -274,25 +357,53 @@ function triggerManualGesture(gesture) {
 }
 
 
-// toggleRecording removed - used toggleMicrophone instead
+// ── Client-side bad-word filter ──────────────────────────────────────────────
+// Bad words are replaced with asterisks before they appear in the chat UI.
+// The server also filters before reaching the LLM, so this is defence-in-depth.
+const _BAD_WORDS_JS = new Set([
+    'fuck', 'fucking', 'fucked', 'fucker', 'fck', 'fuk',
+    'shit', 'shitting', 'shitty',
+    'bitch', 'bitching', 'bitchy',
+    'ass', 'asshole', 'arse',
+    'bastard', 'cunt', 'cock', 'dick', 'pussy',
+    'damn', 'dammit',
+    'crap', 'piss', 'pissed',
+    'nigger', 'nigga', 'faggot', 'retard', 'whore', 'slut',
+]);
 
+function filterBadWords(text) {
+    return text.split(/(\s+)/).map(token => {
+        const bare = token.replace(/[^a-zA-Z0-9']/g, '').toLowerCase();
+        return _BAD_WORDS_JS.has(bare) ? '*'.repeat(bare.length) : token;
+    }).join('');
+}
+
+// toggleRecording removed - used toggleMicrophone instead
 
 async function sendMessage() {
     const input = document.getElementById('text-input');
-    const text = input.value.trim();
-    if (!text) return;
+    const rawText = input.value.trim();
+    if (!rawText) return;
 
-    // ── InputLock: only one request at a time ──
+    // If voice is currently processing, show a hint and keep the text
+    if (_inputLocked && _lockSource === 'voice') {
+        _showVoiceProcessingToast('text');
+        return;   // don't clear input, user can send after voice finishes
+    }
+
     if (!acquireInputLock('text')) return;
+
+    // Filter bad words before displaying and sending
+    const text = filterBadWords(rawText);
 
     addMessage(text, 'user');
     input.value = '';
-    input.disabled = true;   // visually block re-entry while processing
+    input.disabled = true;
 
-    // Detect emotion from user's text locally for immediate avatar reaction
+    // Detect emotion from user's text keywords
     const userEmotion = detectEmotionFromText(text);
     if (userEmotion !== "neutral" && avatar && avatar.showEmotion) {
-        log(`User emotion detected: ${userEmotion}`);
+        log(`User text emotion detected: ${userEmotion}`);
         avatar.showEmotion(userEmotion, 0.5, false);
     }
 
@@ -300,7 +411,12 @@ async function sendMessage() {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, emotion: userEmotion })
+            // Send text emotion AND face emotion as separate channels for server-side fusion
+            body: JSON.stringify({
+                text: text,
+                emotion: userEmotion,          // from text keywords
+                face_emotion: cameraStream ? currentEmotion : "off"   // from camera face detection
+            })
         });
 
         const data = await response.json();
@@ -308,11 +424,12 @@ async function sendMessage() {
     } catch (error) {
         console.error('Error sending message:', error);
         addMessage("Error connecting to AURA.", 'aura');
-        releaseInputLock();  // release on error
+        releaseInputLock();
     } finally {
-        input.disabled = false;   // re-enable input field
+        input.disabled = false;
     }
 }
+
 
 // Simple local emotion detection from text keywords
 function detectEmotionFromText(text) {
@@ -409,10 +526,13 @@ async function startRecording() {
             }
         };
 
-        // When recording stops, send the audio
+        // When recording stops, send the audio.
+        // Small delay (100ms) lets ondataavailable fire its final chunk
+        // BEFORE we try to read recordedChunks — fixes the race condition
+        // where onstop fires before the last chunk is pushed.
         mediaRecorder.onstop = () => {
-            log("MediaRecorder stopped, sending audio...");
-            sendAudioToServer();
+            log("MediaRecorder stopped, waiting for final chunks...");
+            setTimeout(() => sendAudioToServer(), 150);
         };
 
         // Start recording (get data every 500ms)
@@ -452,68 +572,73 @@ function stopRecording() {
         audioStream = null;
     }
 
-    // Reset button visual
-    document.getElementById('mic-btn').classList.remove('active');
-    document.getElementById('mic-btn').style.background = '';
+    // Show processing state immediately so user knows AURA heard them
+    const micBtn = document.getElementById('mic-btn');
+    micBtn.classList.remove('active');
+    micBtn.style.background = 'rgba(108,92,231,0.85)';
+    micBtn.textContent = '⏳';
+    micBtn.disabled = true;  // Block re-tap until response returns
 
-    log("Recording stopped.");
+    log("Recording stopped — processing audio...");
+}
+
+/** Reset mic button back to normal (called after server responds) */
+function _resetMicBtn() {
+    const micBtn = document.getElementById('mic-btn');
+    if (!micBtn) return;
+    micBtn.textContent = '🎤';
+    micBtn.style.background = '';
+    micBtn.disabled = false;
+}
+
+// ── Stale-lock rescue: if InputLock is held for > 10s something went wrong
+// (e.g. network error that didn't properly call releaseInputLock). Auto-release.
+function _rescueStaleLock() {
+    if (_inputLocked) {
+        log('[InputLock] ⚠️ Stale lock detected after 10s — force-releasing.');
+        releaseInputLock();
+        _resetMicBtn();
+    }
 }
 
 /**
- * Send recorded audio to server for transcription
- * First plays the audio locally so user can hear what was recorded
+ * Send recorded audio IMMEDIATELY to server — no playback wait.
  */
 async function sendAudioToServer() {
     if (recordedChunks.length === 0) {
-        log("No audio recorded.");
-        // No message shown - silent fail
+        log("No audio recorded — no chunks captured.");
+        addMessage("⚠️ No audio was recorded. Please try again.", 'aura');
+        _resetMicBtn();
         return;
     }
 
-    // Combine all chunks into a single blob
-    const audioBlob = new Blob(recordedChunks, { type: recordedChunks[0].type });
+    // Use the actual MIME type from the recorded chunks
+    const mimeType = recordedChunks[0].type || 'audio/webm';
+    const audioBlob = new Blob(recordedChunks, { type: mimeType });
     const sizeKB = (audioBlob.size / 1024).toFixed(1);
-    log(`Audio blob: ${sizeKB} KB`);
+    log(`Audio blob: ${sizeKB} KB (${mimeType}) — sending immediately`);
 
-    // Clear recorded chunks for next recording
-    recordedChunks = [];
-
-    // ===== PLAY THE RECORDED AUDIO FIRST =====
-    // Create a URL for the blob
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    // Get the audio player elements
-    const audioPlayer = document.getElementById('recorded-audio');
-    const audioContainer = document.getElementById('audio-playback-container');
-
-    // Set the audio source and show the player
-    audioPlayer.src = audioUrl;
-    audioContainer.style.display = 'block';
-
-    log("Playing back your recording...");
-    // Status message removed - no UI clutter
-
-    // Play the audio
-    try {
-        await audioPlayer.play();
-        log("Audio playback started");
-    } catch (err) {
-        log(`Playback error: ${err.message}`);
+    if (audioBlob.size < 500) {
+        log("Audio blob too small — probably nothing was recorded.");
+        addMessage("⚠️ Recording too short. Try holding the mic button a bit longer.", 'aura');
+        _resetMicBtn();
+        return;
     }
 
-    // Wait for audio to finish playing, then send to server
-    audioPlayer.onended = async () => {
-        log("Playback finished, now sending to server...");
+    // Clear chunks for next recording
+    recordedChunks = [];
 
-        // Hide the player after 1 second
-        setTimeout(() => {
-            audioContainer.style.display = 'none';
-            URL.revokeObjectURL(audioUrl); // Clean up
-        }, 1000);
+    // Hide the playback container if visible
+    const audioContainer = document.getElementById('audio-playback-container');
+    if (audioContainer) audioContainer.style.display = 'none';
 
-        // Now send to server for transcription
-        await sendToServerForTranscription(audioBlob);
-    };
+    // Safety net: if the server takes > 10s to respond, rescue the lock
+    const rescueTimer = setTimeout(_rescueStaleLock, 10000);
+
+    // Send straight to server
+    await sendToServerForTranscription(audioBlob);
+
+    clearTimeout(rescueTimer);
 }
 
 /**
@@ -521,14 +646,25 @@ async function sendAudioToServer() {
  */
 async function sendToServerForTranscription(audioBlob) {
     // ── InputLock: block if another input is already being processed ──
+    // If it's a stale lock from before, the _rescueStaleLock timeout will
+    // have cleared it. Here we just try to acquire normally.
     if (!acquireInputLock('voice')) {
         log('[Voice] Request dropped — another input is in progress.');
+        addMessage('⏳ AURA is still processing — please wait a moment.', 'aura');
+        _resetMicBtn();
         return;
     }
 
+    // Pick the right file extension
+    const type = audioBlob.type || 'audio/webm';
+    const extension = type.includes('mp4') ? 'mp4' : 'webm';
+
     const formData = new FormData();
-    const extension = audioBlob.type.includes('webm') ? 'webm' : 'mp4';
     formData.append('file', audioBlob, `recording.${extension}`);
+    // Include the live face-camera emotion so the server can fuse it with audio emotion
+    const faceEmo = cameraStream ? currentEmotion : "off";
+    formData.append('face_emotion', faceEmo);
+    log(`[Voice] Sending ${(audioBlob.size / 1024).toFixed(1)}KB (${type}) with face_emotion: ${faceEmo}`);
 
     try {
         log("Sending audio to server...");
@@ -537,29 +673,39 @@ async function sendToServerForTranscription(audioBlob) {
             body: formData
         });
 
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
         log("Server response received.");
 
         if (data.input_text && data.input_text.trim()) {
-            const heardText = data.input_text.trim();
+            const heardText = filterBadWords(data.input_text.trim());
             log(`Transcribed: "${heardText}"`);
             addMessage(heardText, 'user');
 
             if (data.text) {
                 handleResponse(data);
             } else {
-                releaseInputLock();  // no response body → release now
+                log('[Voice] Server returned no response text.');
+                addMessage("Hmm, I didn't get a response. Try again!", 'aura');
+                _resetMicBtn();
+                releaseInputLock();
             }
         } else {
-            log("Could not understand audio.");
-            releaseInputLock();  // nothing transcribed → release
+            log("Could not understand audio — no transcript.");
+            addMessage("🎤 I couldn't quite catch that — could you try again?", 'aura');
+            _resetMicBtn();
+            releaseInputLock();
         }
 
     } catch (error) {
         console.error("Audio API error:", error);
-        log(`Error: ${error.message}`);
-        addMessage("⚠️ Error processing audio", 'aura');
-        releaseInputLock();  // release on error
+        log(`[Voice] Error: ${error.message}`);
+        addMessage(`⚠️ Error processing audio: ${error.message}`, 'aura');
+        _resetMicBtn();
+        releaseInputLock();
     }
 }
 
@@ -592,48 +738,44 @@ function handleResponse(data) {
 
         log(`Playing audio: ${data.audio_url} `);
         const audio = new Audio(data.audio_url);
+        audio.preload = 'auto';
         window.currentAudio = audio; // Track it
 
         // ── TALKING GUARD: block emotion/gesture triggers while AURA speaks ──
         isAuraTalking = true;
         log('[Guard] AURA started talking — emotion & gesture triggers paused.');
 
-        audio.play().then(() => {
+        const _onAudioStarted = () => {
             avatar.setTalking(true);
-
-            // Use provided face animation data if available (faster)
-            if (data.face_animation) {
+            // Use provided face animation data if available
+            if (data.face_animation && data.face_animation.length > 0) {
                 log(`Using pre-calculated Lip Sync data (${data.face_animation.length} frames).`);
                 startFaceSync(audio, data.face_animation, data.emotion);
-            } else {
-                // Fallback: Fetch Lip Sync separately
-                // CALL /a2f ENDPOINT explicitly as requested
-                // We need to pass the file path. standard audio_url is "/audio/filename.wav"
-                const filename = data.audio_url.split('/').pop();
-                // We assume the server can find it by filename in root
-
-                log(`Fetching Lip Sync for: ${filename} ...`);
-                fetch('/a2f', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ audioPath: filename, emotion: data.emotion })
-                })
-                    .then(r => r.json())
-                    .then(a2fData => {
-                        if (a2fData.blendshapes) {
-                            log(`Received ${a2fData.blendshapes.length} frames of Lip Sync data.`);
-                            startFaceSync(audio, a2fData.blendshapes, data.emotion);
-                        }
-                    })
-                    .catch(e => {
-                        console.error("A2F Error:", e);
-                        log("Lip Sync Failed: " + e.message);
-                    });
             }
+            // A2F fallback removed — too slow; emotional blendshapes from transitionToEmotion are used instead
+        };
 
-        }).catch(e => {
-            log(`Audio playback failed: ${e.message} `);
-        });
+        const _onAudioError = (msg) => {
+            log(`Audio error: ${msg}`);
+            isAuraTalking = false;
+            _resetMicBtn();
+            releaseInputLock();
+        };
+
+        audio.load();
+        const _pp = audio.play();
+        if (_pp !== undefined) {
+            _pp.then(() => {
+                _onAudioStarted();
+            }).catch((err) => {
+                log(`Autoplay blocked: ${err.message} — showing ▶ button`);
+                _showPlayButton(audio, _onAudioStarted);
+            });
+        } else {
+            _onAudioStarted();
+        }
+
+        audio.onerror = () => _onAudioError('audio element error');
 
         audio.onended = () => {
             isAuraTalking = false;
@@ -644,39 +786,42 @@ function handleResponse(data) {
             stopFaceSync();
             avatar.playAnimation('idle');
             window.currentAudio = null;
+            _resetMicBtn();
             // ── Release InputLock after audio finishes ──
             releaseInputLock();
             log('Audio playback finished.');
         };
-    } else {
-        log("No audio response.");
-        // No audio means response is done — release lock immediately
-        releaseInputLock();
     }
+    // NOTE: Body animations are driven by transitionToEmotion() above — no need to double-play here.
+}
 
-    // Animation based on emotion/keywords
-    if (data.animations && data.animations.length > 0) {
-        // If it's just one and it's 'talk', we might want to ignore it if we handle lip sync separately
-        // But for now, let's play the sequence.
-        // If the sequence contains 'talk', we might want to skip it or handle it differently?
-        // Let's filter out 'talk' if we have other animations, or just play it.
-
-        const anims = data.animations.filter(a => a !== 'talk');
-
-        if (anims.length > 0) {
-            avatar.playSequence(anims, () => {
-                // Only return to idle if not talking
-                if (window.currentAudio && !window.currentAudio.paused) {
-                    // do nothing, let talk continue
-                } else {
-                    avatar.playAnimation('idle');
-                }
-            });
-        }
-    } else if (data.animation && data.animation !== 'talk') {
-        // Fallback for old API
-        avatar.playAnimation(data.animation, true);
+/**
+ * Shows a floating '▶ Tap to hear AURA' button when browser blocks autoplay.
+ * Clicking it unblocks audio for this and future responses.
+ */
+function _showPlayButton(audio, onStarted) {
+    let btn = document.getElementById('autoplay-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'autoplay-btn';
+        btn.style.cssText = [
+            'position:absolute', 'bottom:120px', 'left:50%', 'transform:translateX(-50%)',
+            'background:linear-gradient(135deg,#6c5ce7,#a855f7)', 'color:#fff',
+            'font-size:16px', 'font-weight:700', 'padding:12px 28px',
+            'border:none', 'border-radius:30px', 'cursor:pointer', 'z-index:999',
+            'box-shadow:0 4px 20px rgba(108,92,231,0.6)', 'pointer-events:auto'
+        ].join(';');
+        document.getElementById('ui-overlay').appendChild(btn);
     }
+    btn.textContent = '▶ Tap to hear AURA';
+    btn.style.display = 'block';
+    btn.onclick = () => {
+        btn.style.display = 'none';
+        audio.play().then(() => {
+            onStarted();
+        }).catch(e => log(`Still blocked: ${e.message}`));
+    };
+    setTimeout(() => { if (btn) btn.style.display = 'none'; }, 10000);
 }
 
 let faceSyncInterval;
@@ -818,6 +963,18 @@ async function toggleCamera() {
         btn.classList.remove('active');
         gestureHandler.stop();
         stopFaceDetection();
+
+        // ── FIX: Reset face emotion to 'off' when camera turns off ──────────
+        // Without this, the last detected face emotion lingers in currentEmotion
+        // and gets sent as face_emotion in the next text/voice message, causing
+        // the LLM to see a conflict even though the camera is not running.
+        currentEmotion = 'off';
+        const statusSpan = document.getElementById('current-emotion');
+        if (statusSpan) {
+            statusSpan.textContent = 'Camera off';
+            statusSpan.style.color = '#aaa';
+        }
+        log('[Camera] Stopped — currentEmotion reset to neutral.');
     } else {
         // Start camera
         try {
@@ -863,9 +1020,18 @@ function startFaceDetection(video) {
                 emotion.charAt(0).toUpperCase() + emotion.slice(1) + ` (${pct}%)`;
             statusSpan.style.color = emotion === 'neutral' ? '#aaa' : '#00ff88';
 
-            // Show emotion on avatar face immediately
+            // ── FIX: Show emotion on avatar face AND trigger body animation ──
+            // triggerAnimation=true so face expression changes also play body anims
+            // directly from the camera — no LLM call needed.
             if (avatar && avatar.showEmotion && emotion !== 'neutral') {
-                avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), false);
+                // Only trigger body animation if AURA isn't currently talking
+                // (don't interrupt her own body animations mid-response)
+                const shouldAnimate = !isAuraTalking;
+                avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), shouldAnimate);
+                log(`[FaceEmotion] 🎭 Face→Avatar: ${emotion} (body anim: ${shouldAnimate})`);
+            } else if (emotion === 'neutral' && avatar && avatar.showEmotion) {
+                // Smoothly recover face to neutral when no strong emotion is detected
+                avatar.gradualEmotionalRecovery(1500);
             }
 
             // Auto-trigger AURA reaction after sustained emotion (with cooldown)
@@ -981,21 +1147,39 @@ function _updateEmotionBar(scores) {
         }).join('');
 }
 
-/** Send the detected emotion to AURA backend for a reaction */
-function triggerEmotionReaction(emotion) {
-    // ── InputLock: block if any other input is already in flight ──
-    if (!acquireInputLock('emotion')) return;
+// ── Face Emotion → Avatar Animation Map ─────────────────────────────────────
+// Maps detected face emotions to body animation names.
+// This is PURELY local — no LLM call, no API request.
+// The face camera drives the avatar's expressions and body language directly.
+const FACE_EMOTION_ANIM_MAP = {
+    happy: ['happy'],        // Sitting Laughing
+    sad: ['sad'],          // Defeated
+    angry: ['sad'],          // Defeated (closest fallback)
+    surprised: ['jump'],         // Jump/startle
+    fearful: ['crouch'],       // Crouch
+    disgusted: ['sad'],          // Defeated
+    excited: ['clap'],         // Clapping
+    neutral: ['idle'],         // Idle
+};
 
-    addMessage(`(Emotion Detected: ${emotion})`, 'user');
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: '', emotion: emotion, gesture: 'none' })
-    })
-        .then(res => res.json())
-        .then(data => handleResponse(data))
-        .catch(err => {
-            console.error('Error triggering emotion:', err);
-            releaseInputLock();
-        });
+/**
+ * Trigger a status-bar pulse when a sustained face emotion is confirmed.
+ * Body animations + face blendshapes are already driven continuously by
+ * showEmotion(triggerAnimation=true) in the onEmotion callback above.
+ * This function is left as a lightweight "confirmed emotion" signal only.
+ */
+function triggerEmotionReaction(emotion) {
+    log(`[FaceEmotion] ✅ Sustained emotion confirmed: ${emotion}`);
+
+    // Just pulse the status bar to show the emotion was confirmed
+    const statusSpan = document.getElementById('current-emotion');
+    if (statusSpan) {
+        const orig = statusSpan.style.color;
+        statusSpan.style.color = '#f9ca24';
+        statusSpan.style.fontWeight = 'bold';
+        setTimeout(() => {
+            statusSpan.style.color = orig;
+            statusSpan.style.fontWeight = '';
+        }, 1200);
+    }
 }
