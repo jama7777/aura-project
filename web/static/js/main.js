@@ -326,6 +326,58 @@ function setupEventListeners() {
             gestureMenu.classList.add('hidden');
         });
     });
+
+    // Interview Mode
+    const interviewBtn = document.getElementById('interview-btn');
+    const resumeUpload = document.getElementById('resume-upload');
+    if(interviewBtn && resumeUpload) {
+        interviewBtn.addEventListener('click', () => {
+            // Stop other processing if something is going on, or just trigger click
+            if (_inputLocked) {
+                _showBusyHint('interview');
+                return;
+            }
+            resumeUpload.click();
+        });
+        
+        resumeUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!acquireInputLock('interview')) return;
+            
+            log("Uploading resume for Interview Mode...");
+            addMessage("📄 Uploading resume and entering Interview Mode...", 'user');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch('/api/upload-resume', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    addMessage("Resume received! Let's begin the mock interview. Whenever you're ready, say 'Hi AURA' or send a message.", 'aura');
+                    interviewBtn.style.background = '#27ae60'; // Green to indicate active state
+                    interviewBtn.title = 'Interview Mode Active';
+                    log("Interview Mode enabled.");
+                } else {
+                    addMessage("⚠️ Error: " + (data.detail || data.message), 'aura');
+                }
+            } catch(error) {
+                console.error("Upload error:", error);
+                addMessage("⚠️ Failed to upload resume.", 'aura');
+            } finally {
+                // clear the input
+                resumeUpload.value = '';
+                releaseInputLock();
+            }
+        });
+    }
 }
 
 function triggerManualGesture(gesture) {

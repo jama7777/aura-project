@@ -15,3 +15,4 @@ grpcio
 grpcio-tools
 openai
 nvidia-audio2face-3d
+PyPDF2
