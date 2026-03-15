@@ -82,6 +82,9 @@ export class Avatar {
         controls.target.set(0, 100, 0);
         controls.update();
 
+        // Create Desk/Table for Interview Mode
+        this.createInterviewDesk();
+
         // Load Model
         this.loadModel();
 
@@ -96,6 +99,69 @@ export class Avatar {
 
         // Animation Loop
         this.animate();
+    }
+
+    createInterviewDesk() {
+        // Simple modern desk
+        const deskGroup = new THREE.Group();
+        
+        // Table top (wood/dark material)
+        const topGeo = new THREE.BoxGeometry(180, 5, 80);
+        const topMat = new THREE.MeshPhongMaterial({ color: 0x3a2e24 });
+        const topMesh = new THREE.Mesh(topGeo, topMat);
+        topMesh.position.y = 80; // height of the desk
+        topMesh.receiveShadow = true;
+        topMesh.castShadow = true;
+        deskGroup.add(topMesh);
+
+        // Legs (metal)
+        const legGeo = new THREE.CylinderGeometry(2, 2, 80);
+        const legMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
+        
+        const positions = [
+            [-80, 40, -30], [80, 40, -30],
+            [-80, 40, 30], [80, 40, 30]
+        ];
+        
+        positions.forEach(pos => {
+            const leg = new THREE.Mesh(legGeo, legMat);
+            leg.position.set(...pos);
+            leg.receiveShadow = true;
+            leg.castShadow = true;
+            deskGroup.add(leg);
+        });
+
+        deskGroup.position.set(0, 0, 70); // Positioned in front of the avatar
+        deskGroup.visible = false; // Hidden by default
+        this.scene.add(deskGroup);
+        this.interviewDesk = deskGroup;
+    }
+
+    setInterviewMode(active) {
+        this.log(`Setting Interview Mode: ${active}`);
+        
+        if (active) {
+            // Show desk
+            if (this.interviewDesk) this.interviewDesk.visible = true;
+            
+            // Move camera to a desk framing
+            // Original: set(0, 150, 400) -> Zoom in slightly closer for an interview feel
+            this.camera.position.set(0, 130, 300);
+            
+            // Switch to sitting animation
+            if (this.animations['interview_idle']) {
+                this.playAnimation('interview_idle');
+            }
+        } else {
+            // Hide desk
+            if (this.interviewDesk) this.interviewDesk.visible = false;
+            
+            // Restore camera
+            this.camera.position.set(0, 150, 400);
+            
+            // Switch to standing idle
+            this.playAnimation('idle');
+        }
     }
 
     onFileSelected(event) {
@@ -336,6 +402,7 @@ export class Avatar {
         // Map the user's downloaded Mixamo animations to our emotion system names
         const animationMap = {
             'idle': 'Catwalk Idle To Twist R.fbx',  // Cat walk idle
+            'interview_idle': 'Sitting_interview_position@1.fbx', // Interview sitting
             'happy': 'Sitting Laughing.fbx',
             'dance': 'Hip Hop Dancing.fbx',
             'clap': 'Clapping.fbx',
@@ -437,6 +504,10 @@ export class Avatar {
                 action.setLoop(THREE.LoopPingPong);
                 action.clampWhenFinished = false;
                 // Start eye idle system as soon as idle kicks in
+                setTimeout(() => this.startIdleEyes(), 300);
+            } else if (name === 'interview_idle') {
+                action.setLoop(THREE.LoopRepeat);
+                action.clampWhenFinished = false;
                 setTimeout(() => this.startIdleEyes(), 300);
             } else {
                 action.setLoop(THREE.LoopRepeat);

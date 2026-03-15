@@ -370,6 +370,9 @@ function setupEventListeners() {
                 
                 if (response.ok) {
                     isInterviewMode = true;
+                    if (avatar && avatar.setInterviewMode) {
+                        avatar.setInterviewMode(true);
+                    }
                     addMessage("Resume received! Let's begin the mock interview. Whenever you're ready, say 'Hi AURA' or send a message.", 'aura');
                     interviewBtn.style.background = '#27ae60'; // Green to indicate active state
                     interviewBtn.title = 'Interview Mode Active';
