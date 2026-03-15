@@ -9,6 +9,8 @@ let currentEmotion = "off";
 let lastTriggeredEmotion = null;
 let emotionStartTime = 0;
 let emotionCooldown = 0;
+let isInterviewMode = false;
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── INPUT LOCK (MUTEX) ───────────────────────────────────────────────────────
@@ -307,6 +309,11 @@ function setupEventListeners() {
     const gestureMenu = document.getElementById('gesture-menu');
 
     gestureBtn.addEventListener('click', (e) => {
+        if (isInterviewMode) {
+            log("Gestures are disabled in Interview Mode.");
+            _showBusyHint('Interview Mode (Gestures Disabled)');
+            return;
+        }
         e.stopPropagation();
         gestureMenu.classList.toggle('hidden');
     });
@@ -321,6 +328,7 @@ function setupEventListeners() {
     // Gesture Options
     document.querySelectorAll('.gesture-option-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            if (isInterviewMode) return;
             const gesture = btn.dataset.gesture;
             triggerManualGesture(gesture);
             gestureMenu.classList.add('hidden');
@@ -361,10 +369,11 @@ function setupEventListeners() {
                 const data = await response.json();
                 
                 if (response.ok) {
+                    isInterviewMode = true;
                     addMessage("Resume received! Let's begin the mock interview. Whenever you're ready, say 'Hi AURA' or send a message.", 'aura');
                     interviewBtn.style.background = '#27ae60'; // Green to indicate active state
                     interviewBtn.title = 'Interview Mode Active';
-                    log("Interview Mode enabled.");
+                    log("Interview Mode enabled and Gestures disabled.");
                 } else {
                     addMessage("⚠️ Error: " + (data.detail || data.message), 'aura');
                 }
@@ -381,6 +390,7 @@ function setupEventListeners() {
 }
 
 function triggerManualGesture(gesture) {
+    if (isInterviewMode) return;
     log(`Manual Gesture Triggered: ${gesture}`);
 
     // If voice is processing, play animation only — don't interrupt
@@ -1075,10 +1085,13 @@ function startFaceDetection(video) {
             // ── FIX: Show emotion on avatar face AND trigger body animation ──
             // triggerAnimation=true so face expression changes also play body anims
             // directly from the camera — no LLM call needed.
+            // If we are in interview mode, restrict certain face emotions from triggering body animations, just pass to LLM
+            let shouldAnimate = !isAuraTalking;
+            if (isInterviewMode && emotion !== 'neutral') {
+                shouldAnimate = false; // Interviewer persona holds face expressions but doesn't do wild body animations
+            }
+
             if (avatar && avatar.showEmotion && emotion !== 'neutral') {
-                // Only trigger body animation if AURA isn't currently talking
-                // (don't interrupt her own body animations mid-response)
-                const shouldAnimate = !isAuraTalking;
                 avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), shouldAnimate);
                 log(`[FaceEmotion] 🎭 Face→Avatar: ${emotion} (body anim: ${shouldAnimate})`);
             } else if (emotion === 'neutral' && avatar && avatar.showEmotion) {
