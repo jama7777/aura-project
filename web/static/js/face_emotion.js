@@ -14,8 +14,8 @@ const WIN_THRESHOLD = 0.22;  // min % of window votes to accept dominant emotion
 const STABLE_MS = 550;   // ms emotion must hold before firing onEmotion
 
 // Head-turn detection thresholds
-const HEAD_TURN_RATIO = 0.35;  // eye asymmetry ratio that indicates a turn
-const HEAD_TURN_MS   = 1200;   // ms head must be turned before firing callback
+const HEAD_TURN_RATIO = 0.40;  // eye asymmetry ratio that indicates a turn (lower = less sensitive)
+const HEAD_TURN_MS   = 700;    // ms head must be turned before firing callback
 
 // ─── FaceEmotionDetector ──────────────────────────────────────────────────────
 export class FaceEmotionDetector {
@@ -101,9 +101,10 @@ export class FaceEmotionDetector {
             });
 
             // v4: Request landmarks so we can detect head-turn
+            // IMPORTANT: use useTinyModel=true to match TinyFaceDetector
             const det = await faceapi
                 .detectSingleFace(v, opts)
-                .withFaceLandmarks()
+                .withFaceLandmarks(true)      // true = use faceLandmark68TinyNet
                 .withFaceExpressions();
 
             if (det) {

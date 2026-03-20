@@ -245,7 +245,7 @@ export class Avatar {
 
         // ── Legs: four chunky square legs ────────────────────────────────────
         // Each leg goes from just below the desk top down to y=0 (ground)
-        const LEG_HEIGHT = 95;   // matches deskGroup.position.y below
+        const LEG_HEIGHT = 72;   // matches deskGroup.position.y below
         const legGeo = new THREE.BoxGeometry(5, LEG_HEIGHT, 5);
         const legMat = new THREE.MeshPhongMaterial({
             color: 0x222222,
@@ -327,9 +327,10 @@ export class Avatar {
         coffee.position.set(-55, DESK_TOP_Y + 10, 5);
         deskGroup.add(coffee);
 
-        // ── Position group: desk surface at y=95 (realistic seated height) ──
-        // z = -10 puts the desk in FRONT of the avatar so she's "behind" it
-        deskGroup.position.set(0, 95, -10);
+        // ── Position group: desk surface at y=72 (waist level when sitting) ──
+        // Avatar feet = y=0, avatar ~150 tall → waist ≈ y=60-75 when seated
+        // z = -10 puts desk in FRONT of avatar so she appears behind it
+        deskGroup.position.set(0, 72, -10);
 
         deskGroup.visible = false;
         this.scene.add(deskGroup);
@@ -349,13 +350,11 @@ export class Avatar {
             this.scene.fog = new THREE.Fog(0x0d0d14, 300, 900);
 
             // ── Camera: looking at AURA's face from across the desk ─────────
-            // Avatar upper body is ~80-160 (waist to head). Desk top at y=95.
-            // Camera sits at y=145 (eye-level), z=260 (across the desk).
-            // Smoothly animate camera to position
-            this.camera.position.set(0, 145, 260);
+            // Desk top now at y=72 (waist). Avatar head is around y=120-130.
+            // Camera at y=120, z=240 gives a natural over-the-desk eye-level view.
+            this.camera.position.set(0, 120, 240);
             if (this.controls) {
-                // Target AURA's face (y≈140) slightly above desk
-                this.controls.target.set(0, 135, 0);
+                this.controls.target.set(0, 110, 0);   // aim at AURA's face
                 this.controls.minDistance = 80;
                 this.controls.maxDistance = 350;
                 this.controls.update();

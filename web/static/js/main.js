@@ -286,10 +286,11 @@ async function pollForUpdates() {
 async function loadFaceAPI() {
     log("[FaceEmotion] Loading face-api.js models...");
     try {
-        // Load TinyFaceDetector + expressions + 68-point landmarks (for head-turn)
+        // NOTE: faceLandmark68TinyNet is required when using TinyFaceDetector.
+        //       faceLandmark68Net is for SSD detector only — wrong model = no landmarks!
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
         await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
-        await faceapi.nets.faceLandmark68Net.loadFromUri('/face-models');
+        await faceapi.nets.faceLandmark68TinyNet.loadFromUri('/face-models');
         log("[FaceEmotion] Models loaded from local /face-models ✅");
     } catch (e) {
         log("[FaceEmotion] Local models not found — trying CDN...");
@@ -297,7 +298,7 @@ async function loadFaceAPI() {
             const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
             await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
             await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
-            await faceapi.nets.faceLandmark68Net.loadFromUri(cdn);
+            await faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn);
             log("[FaceEmotion] Models loaded from CDN ✅");
         } catch (err) {
             console.error('[FaceEmotion] Model load failed:', err);
@@ -623,12 +624,11 @@ function _showInterviewStageUI() {
     _setInterviewStage(1);  // highlight stage 1 by default
 }
 
-/** Update the active stage, highlight selected button, and tell AURA */
+/** Update the active stage, highlight selected button, show toast */
 function _setInterviewStage(n) {
     interviewStage = n;
-    log(`[Interview] Stage changed → ${INTERVIEW_STAGE_LABELS[n]}`);
+    log(`[Interview] Stage → ${INTERVIEW_STAGE_LABELS[n]}`);
 
-    // Update button highlights
     for (let i = 1; i <= 4; i++) {
         const btn = document.getElementById(`stage-btn-${i}`);
         if (!btn) continue;
@@ -642,18 +642,25 @@ function _setInterviewStage(n) {
             btn.style.transform = 'scale(1)';
         }
     }
-
-    // Announce stage change in chat
-    const msgText = `Switching to ${INTERVIEW_STAGE_LABELS[n]}. I'll adjust my questions accordingly.`;
-    addMessage(msgText, 'aura');
-
-    // Optional TTS announcement via /api/animate (no LLM)
-    fetch('/api/animate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: msgText, emotion: 'neutral' })
-    }).catch(() => {});
+    // Light toast — no input lock, panel stays visible always
+    _showStageToast(INTERVIEW_STAGE_LABELS[n]);
 }
+
+/** Animated toast appearing below the stage pill */
+function _showStageToast(label) {
+    let t = document.getElementById('stage-toast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'stage-toast';
+        t.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%) translateY(-6px);background:rgba(10,10,20,0.92);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:20px;padding:7px 20px;font-size:13px;font-weight:600;z-index:600;pointer-events:none;transition:opacity .25s,transform .25s;opacity:0;font-family:inherit;';
+        document.body.appendChild(t);
+    }
+    t.textContent = label;
+    requestAnimationFrame(() => { t.style.opacity='1'; t.style.transform='translateX(-50%) translateY(0)'; });
+    clearTimeout(t._h);
+    t._h = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(-6px)'; }, 2200);
+}
+
 
 
 // Simple local emotion detection from text keywords
