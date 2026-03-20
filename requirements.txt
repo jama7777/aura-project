@@ -6,12 +6,17 @@ torchaudio
 openai-whisper
 sentence_transformers
 google-generativeai
-chromadb
-TTS
+chromadb>=0.4.0,<0.6.0
+# TTS (Coqui) removed — incompatible with Python 3.13 and unavailable on PyPI for this version.
+# Using gTTS (Google Text-to-Speech) as a compatible replacement.
+gTTS
+pydub
 numpy
 speechbrain
 transformers
 grpcio
 grpcio-tools
 openai
-nvidia-audio2face-3d
+python-dotenv
+# nvidia-audio2face-3d removed — package does not exist on PyPI.
+# NVIDIA ACE integration is handled via grpcio with a graceful ImportError fallback in src/perception/nv_ace.py.
