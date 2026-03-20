@@ -29,6 +29,16 @@ export class Avatar {
         // Emotional recovery
         this._recoveryId = 0;
         this.isInterviewMode = false;
+
+        // ── Multi-avatar catalog ─────────────────────────────────────────────
+        // Each entry: { name, url, ext, credit }
+        // Users can add more GLB/FBX models to assets/models/ and register here.
+        this.AVATAR_CATALOG = [
+            { key: 'aura',    name: 'AURA (Default)',   url: '/assets/models/rpm_avatar.glb',    ext: 'glb',  offsetY: -75 },
+            { key: 'casual',  name: 'Casual Avatar',    url: '/assets/models/rpm_avatar.glb',    ext: 'glb',  offsetY: -75 },   // placeholder — swap with real model
+            { key: 'formal',  name: 'Formal Interviewer', url: '/assets/models/rpm_avatar.glb', ext: 'glb',  offsetY: -75 },   // placeholder
+        ];
+        this.currentAvatarKey = 'aura';
     }
 
     log(msg) {
@@ -100,6 +110,103 @@ export class Avatar {
 
         // Animation Loop
         this.animate();
+    }
+
+    // ─── Multi-Avatar Switcher ────────────────────────────────────────────────
+    /**
+     * Load a new avatar by its catalog key.
+     * Existing animations are re-attached to the new model's mixer.
+     */
+    switchAvatar(key) {
+        const entry = this.AVATAR_CATALOG.find(a => a.key === key);
+        if (!entry) { this.log(`Unknown avatar key: ${key}`); return; }
+
+        this.log(`Switching avatar → ${entry.name}`);
+        this.currentAvatarKey = key;
+
+        // Remove old model
+        if (this.model) {
+            this.scene.remove(this.model);
+            if (this.mixer) this.mixer.stopAllAction();
+            this.model = null;
+            this.mixer = null;
+            this.animations = {};
+            this.currentAction = null;
+            this.faceMesh = null;
+            this.jawBone = null;
+            this.headBone = null;
+            this.morphTargetDictionary = {};
+            this.stopIdleEyes();
+        }
+
+        if (entry.ext === 'glb') {
+            const gltfLoader = new GLTFLoader();
+            gltfLoader.load(entry.url, (gltf) => {
+                this._setupLoadedModel(gltf.scene, gltf.animations || [], entry.offsetY);
+            }, undefined, (err) => this.log('Avatar load error: ' + err));
+        } else if (entry.ext === 'fbx') {
+            const fbxLoader = new FBXLoader();
+            fbxLoader.load(entry.url, (fbx) => {
+                this._setupLoadedModel(fbx, fbx.animations || [], entry.offsetY);
+            }, undefined, (err) => this.log('Avatar load error: ' + err));
+        }
+    }
+
+    /** Common post-load setup shared by initial load and switchAvatar */
+    _setupLoadedModel(object, animations, offsetY = -75) {
+        this.mixer = new THREE.AnimationMixer(object);
+
+        // Auto-scale
+        const box = new THREE.Box3().setFromObject(object);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        if (maxDim > 0) {
+            const targetScale = 150 / maxDim;
+            object.scale.set(targetScale, targetScale, targetScale);
+        }
+        object.position.y = offsetY;
+
+        // Find face mesh + bones
+        this.faceMesh = null;
+        this.jawBone = null;
+        this.headBone = null;
+        object.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                if (child.morphTargetInfluences && child.morphTargetDictionary) {
+                    this.faceMesh = child;
+                    this.morphTargetDictionary = child.morphTargetDictionary;
+                }
+            }
+            if (child.isBone) {
+                const n = child.name.toLowerCase();
+                if (n.includes('jaw')) this.jawBone = child;
+                else if (n.includes('head') && !this.headBone) this.headBone = child;
+            }
+        });
+
+        this.scene.add(object);
+        this.model = object;
+
+        // Load animations
+        if (animations.length > 0) {
+            animations.forEach(clip => {
+                this.animations[clip.name] = this.mixer.clipAction(clip);
+            });
+        }
+        this.loadFBXAnimations();
+
+        // If in interview mode, re-apply the sitting camera/desk immediately
+        if (this.isInterviewMode) {
+            setTimeout(() => {
+                if (this.animations['interview_idle']) this.playAnimation('interview_idle');
+            }, 500);
+        }
+
+        this.log(`✅ Avatar switched to: ${this.currentAvatarKey}`);
+        // Fire external callback so UI can update avatar selector
+        if (this.onAvatarSwitched) this.onAvatarSwitched(this.currentAvatarKey);
     }
 
     createInterviewDesk() {

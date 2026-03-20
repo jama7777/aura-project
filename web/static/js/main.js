@@ -18,6 +18,16 @@ let _interviewNoFaceStart = null;     // timestamp when face was last lost
 const INTERVIEW_INATTENTION_MS = 3000;  // 3s before AURA reacts
 let _interviewInattentionFired = false; // so it only fires once per "look-away" event
 
+// ── Interview Stage State ─────────────────────────────────────────────────
+// 1 = Warm-up (Simple), 2 = Core (Medium), 3 = Deep-dive (Hard), 4 = Expert (Very Hard)
+let interviewStage = 1;
+const INTERVIEW_STAGE_LABELS = [
+    '', // index 0 unused
+    '🟢 Stage 1 — Warm-up (Simple)',
+    '🟡 Stage 2 — Core Skills (Medium)',
+    '🟠 Stage 3 — Deep-dive (Hard)',
+    '🔴 Stage 4 — Expert (Very Hard)'
+];
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -276,9 +286,10 @@ async function pollForUpdates() {
 async function loadFaceAPI() {
     log("[FaceEmotion] Loading face-api.js models...");
     try {
-        // Try local models first
+        // Load TinyFaceDetector + expressions + 68-point landmarks (for head-turn)
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
         await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('/face-models');
         log("[FaceEmotion] Models loaded from local /face-models ✅");
     } catch (e) {
         log("[FaceEmotion] Local models not found — trying CDN...");
@@ -286,6 +297,7 @@ async function loadFaceAPI() {
             const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
             await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
             await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(cdn);
             log("[FaceEmotion] Models loaded from CDN ✅");
         } catch (err) {
             console.error('[FaceEmotion] Model load failed:', err);
@@ -293,6 +305,7 @@ async function loadFaceAPI() {
         }
     }
 }
+
 
 function setupEventListeners() {
     const textInput = document.getElementById('text-input');
@@ -378,16 +391,31 @@ function setupEventListeners() {
 
                 if (response.ok) {
                     isInterviewMode = true;
+                    interviewStage  = 1;   // always start at stage 1
+
                     if (avatar && avatar.setInterviewMode) {
                         avatar.setInterviewMode(true);
                     }
-                    addMessage("Resume received! Let's begin the mock interview. Whenever you're ready, say 'Hi AURA' or send a message.", 'aura');
-                    interviewBtn.style.background = '#27ae60'; // Green to indicate active state
-                    interviewBtn.title = 'Interview Mode Active';
-                    log("Interview Mode enabled and Gestures disabled.");
 
-                    // ── Auto-start camera so AURA can read your face expressions ──
-                    // Only start if camera isn't already on
+                    // ── Pause gesture recognition immediately ──────────────────
+                    if (gestureHandler && gestureHandler.pause) gestureHandler.pause();
+
+                    // ── Force sitting animation ───────────────────────────────
+                    setTimeout(() => {
+                        if (avatar && avatar.animations && avatar.animations['interview_idle']) {
+                            avatar.playAnimation('interview_idle');
+                        }
+                    }, 300);
+
+                    // ── Show stage selector ──────────────────────────────────
+                    _showInterviewStageUI();
+
+                    addMessage(`Resume received!  Starting ${INTERVIEW_STAGE_LABELS[interviewStage]}. Whenever you're ready, say "Hi AURA" or type a message.`, 'aura');
+                    interviewBtn.style.background = '#27ae60';
+                    interviewBtn.title = 'Interview Mode Active';
+                    log("Interview Mode enabled. Gestures paused.");
+
+                    // ── Auto-start camera ────────────────────────────────────
                     if (!cameraStream) {
                         log("[Interview] Auto-starting camera for face emotion detection...");
                         toggleCamera();
@@ -399,11 +427,35 @@ function setupEventListeners() {
                 console.error("Upload error:", error);
                 addMessage("⚠️ Failed to upload resume.", 'aura');
             } finally {
-                // clear the input
                 resumeUpload.value = '';
                 releaseInputLock();
             }
         });
+    }
+
+    // ── Avatar Switcher ─────────────────────────────────────────────────
+    const avatarSelect = document.getElementById('avatar-select');
+    if (avatarSelect) {
+        // Populate options from catalog
+        if (avatar && avatar.AVATAR_CATALOG) {
+            avatar.AVATAR_CATALOG.forEach(entry => {
+                const opt = document.createElement('option');
+                opt.value = entry.key;
+                opt.textContent = entry.name;
+                avatarSelect.appendChild(opt);
+            });
+        }
+        avatarSelect.addEventListener('change', () => {
+            const key = avatarSelect.value;
+            log(`[Avatar] Switching to: ${key}`);
+            if (avatar && avatar.switchAvatar) avatar.switchAvatar(key);
+        });
+        // Update selector when avatar finishes loading
+        if (avatar) {
+            avatar.onAvatarSwitched = (key) => {
+                avatarSelect.value = key;
+            };
+        }
     }
 }
 
@@ -465,37 +517,37 @@ async function sendMessage() {
     const rawText = input.value.trim();
     if (!rawText) return;
 
-    // If voice is currently processing, show a hint and keep the text
     if (_inputLocked && _lockSource === 'voice') {
         _showVoiceProcessingToast('text');
-        return;   // don't clear input, user can send after voice finishes
+        return;
     }
 
     if (!acquireInputLock('text')) return;
 
-    // Filter bad words before displaying and sending
     const text = filterBadWords(rawText);
 
     addMessage(text, 'user');
     input.value = '';
     input.disabled = true;
 
-    // Detect emotion from user's text keywords
     const userEmotion = detectEmotionFromText(text);
     if (userEmotion !== "neutral" && avatar && avatar.showEmotion) {
         log(`User text emotion detected: ${userEmotion}`);
         avatar.showEmotion(userEmotion, 0.5, false);
     }
 
+    // ── Inject interview stage context so LLM knows difficulty level ───────────
+    const stageHint = isInterviewMode ? _getInterviewStagePrompt() : '';
+    const finalText = isInterviewMode ? `[${stageHint}] ${text}` : text;
+
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            // Send text emotion AND face emotion as separate channels for server-side fusion
             body: JSON.stringify({
-                text: text,
-                emotion: userEmotion,          // from text keywords
-                face_emotion: cameraStream ? currentEmotion : "off"   // from camera face detection
+                text: finalText,
+                emotion: userEmotion,
+                face_emotion: cameraStream ? currentEmotion : "off"
             })
         });
 
@@ -508,6 +560,99 @@ async function sendMessage() {
     } finally {
         input.disabled = false;
     }
+}
+
+// ── Interview Stage Helpers ─────────────────────────────────────────────────
+/** Returns a short prompt hint injected into every message during interview mode */
+function _getInterviewStagePrompt() {
+    const hints = [
+        '',
+        'INTERVIEW_STAGE:1_SIMPLE — Ask only warm-up and introductory questions. Keep them simple and encouraging.',
+        'INTERVIEW_STAGE:2_MEDIUM — Ask core technical/behavioral questions at a moderate difficulty level.',
+        'INTERVIEW_STAGE:3_HARD — Ask challenging deep-dive questions requiring in-depth knowledge.',
+        'INTERVIEW_STAGE:4_EXPERT — Ask expert-level questions. Challenge every claim. Probe edge cases and trade-offs.'
+    ];
+    return hints[interviewStage] || hints[1];
+}
+
+/** Create the floating interview stage selector panel */
+function _showInterviewStageUI() {
+    let panel = document.getElementById('interview-stage-panel');
+    if (panel) { panel.style.display = 'flex'; return; }
+
+    panel = document.createElement('div');
+    panel.id = 'interview-stage-panel';
+    panel.style.cssText = [
+        'position:fixed', 'top:16px', 'left:50%', 'transform:translateX(-50%)',
+        'display:flex', 'gap:8px', 'align-items:center',
+        'background:rgba(10,10,20,0.88)', 'border:1px solid rgba(255,255,255,0.15)',
+        'border-radius:40px', 'padding:8px 18px', 'z-index:500',
+        'backdrop-filter:blur(12px)', 'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
+        'pointer-events:auto'
+    ].join(';');
+
+    const label = document.createElement('span');
+    label.style.cssText = 'color:#aaa;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;';
+    label.textContent = 'DIFFICULTY';
+    panel.appendChild(label);
+
+    const stages = [
+        { n: 1, icon: '🟢', title: 'Simple' },
+        { n: 2, icon: '🟡', title: 'Medium' },
+        { n: 3, icon: '🟠', title: 'Hard' },
+        { n: 4, icon: '🔴', title: 'Expert' }
+    ];
+
+    stages.forEach(({ n, icon, title }) => {
+        const btn = document.createElement('button');
+        btn.id = `stage-btn-${n}`;
+        btn.title = title;
+        btn.style.cssText = [
+            'background:none', 'border:2px solid transparent',
+            'color:white', 'font-size:20px', 'cursor:pointer',
+            'border-radius:50%', 'width:38px', 'height:38px',
+            'display:flex', 'align-items:center', 'justify-content:center',
+            'transition:all 0.2s'
+        ].join(';');
+        btn.textContent = icon;
+        btn.addEventListener('click', () => _setInterviewStage(n));
+        panel.appendChild(btn);
+    });
+
+    document.body.appendChild(panel);
+    _setInterviewStage(1);  // highlight stage 1 by default
+}
+
+/** Update the active stage, highlight selected button, and tell AURA */
+function _setInterviewStage(n) {
+    interviewStage = n;
+    log(`[Interview] Stage changed → ${INTERVIEW_STAGE_LABELS[n]}`);
+
+    // Update button highlights
+    for (let i = 1; i <= 4; i++) {
+        const btn = document.getElementById(`stage-btn-${i}`);
+        if (!btn) continue;
+        if (i === n) {
+            btn.style.border = '2px solid #fff';
+            btn.style.background = 'rgba(255,255,255,0.15)';
+            btn.style.transform = 'scale(1.18)';
+        } else {
+            btn.style.border = '2px solid transparent';
+            btn.style.background = 'none';
+            btn.style.transform = 'scale(1)';
+        }
+    }
+
+    // Announce stage change in chat
+    const msgText = `Switching to ${INTERVIEW_STAGE_LABELS[n]}. I'll adjust my questions accordingly.`;
+    addMessage(msgText, 'aura');
+
+    // Optional TTS announcement via /api/animate (no LLM)
+    fetch('/api/animate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: msgText, emotion: 'neutral' })
+    }).catch(() => {});
 }
 
 
@@ -1192,6 +1337,53 @@ function startFaceDetection(video) {
     // Start the face-api.js detection loop on the video element
     faceDetector.start(video);
     log('[FaceEmotion] Face emotion detector started ✅');
+
+    // ── Head-turn detection callback (v4) ───────────────────────────────
+    faceDetector.onHeadTurn((direction) => {
+        if (!isInterviewMode || _inputLocked) return;
+
+        log(`[Interview] 🔄 Head turned ${direction} — AURA noticing...`);
+
+        const warnings = [
+            "Please keep your eyes on me — maintaining eye contact shows confidence.",
+            "Try to keep your head straight and face forward during the interview.",
+            "I noticed you looked to the side. In a real interview, focus on your interviewer!",
+            "Head positioning matters! Keep facing forward to make a strong impression.",
+        ];
+        const msg = warnings[Math.floor(Math.random() * warnings.length)];
+
+        if (!acquireInputLock('headturn')) return;
+
+        addMessage(msg, 'aura');
+
+        fetch('/api/animate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: msg, emotion: 'thinking' })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.audio_url) {
+                const audio = new Audio(data.audio_url);
+                window.currentAudio = audio;
+                avatar.setTalking(true);
+                audio.play().catch(() => {});
+                audio.onended = () => {
+                    avatar.setTalking(false);
+                    releaseInputLock();
+                    // Cool-down: reset head-turn state after AURA reacts
+                    setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+                };
+            } else {
+                releaseInputLock();
+                setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+            }
+        })
+        .catch(() => {
+            releaseInputLock();
+            setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+        });
+    });
 }
 
 

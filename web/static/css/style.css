@@ -273,3 +273,41 @@ html {
 .gesture-option-btn:hover {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* ── Avatar Selector ───────────────────────────────────────────────────────── */
+.avatar-selector-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 25px;
+    padding: 6px 14px;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    transition: background 0.2s;
+}
+
+.avatar-selector-wrapper:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.avatar-selector-icon {
+    font-size: 1.1rem;
+}
+
+#avatar-select {
+    background: transparent;
+    border: none;
+    color: white;
+    font-size: 0.85rem;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    max-width: 130px;
+}
+
+#avatar-select option {
+    background: #1a1a2e;
+    color: white;
+}
