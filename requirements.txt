@@ -1,17 +1,36 @@
-fastapi
-uvicorn
-python-multipart
-torch
-torchaudio
-openai-whisper
-sentence_transformers
-google-generativeai
-chromadb
-TTS
-numpy
-speechbrain
-transformers
-grpcio
-grpcio-tools
-openai
-nvidia-audio2face-3d
+# AURA Project - Python Dependencies
+# Pinned for Python 3.11 compatibility
+
+# Web server
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# AI / LLM
+google-generativeai==0.7.2
+openai==1.30.1
+
+# Speech / Audio
+torch==2.3.0
+torchaudio==2.3.0
+openai-whisper==20231117
+TTS==0.22.0
+speechbrain==1.0.0
+
+# ML / Embeddings
+sentence-transformers==3.0.1
+transformers==4.41.2
+numpy>=1.24.0,<2.0.0
+
+# Vector DB
+chromadb==0.5.0
+
+# gRPC (for NVIDIA ACE)
+grpcio==1.64.0
+grpcio-tools==1.64.0
+
+# NVIDIA (may be unavailable in cloud - see notes)
+# nvidia-audio2face-3d
+
+# PDF parsing
+PyPDF2==3.0.1

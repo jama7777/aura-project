@@ -9,6 +9,26 @@ let currentEmotion = "off";
 let lastTriggeredEmotion = null;
 let emotionStartTime = 0;
 let emotionCooldown = 0;
+let isInterviewMode = false;
+
+// ── Interview Inattention Tracking ──────────────────────────────────────────────
+// When the user looks away (face disappears from camera) during interview mode,
+// AURA reacts like a professional interviewer after a brief grace period.
+let _interviewNoFaceStart = null;     // timestamp when face was last lost
+const INTERVIEW_INATTENTION_MS = 3000;  // 3s before AURA reacts
+let _interviewInattentionFired = false; // so it only fires once per "look-away" event
+
+// ── Interview Stage State ─────────────────────────────────────────────────
+// 1 = Warm-up (Simple), 2 = Core (Medium), 3 = Deep-dive (Hard), 4 = Expert (Very Hard)
+let interviewStage = 1;
+const INTERVIEW_STAGE_LABELS = [
+    '', // index 0 unused
+    '🟢 Stage 1 — Warm-up (Simple)',
+    '🟡 Stage 2 — Core Skills (Medium)',
+    '🟠 Stage 3 — Deep-dive (Hard)',
+    '🔴 Stage 4 — Expert (Very Hard)'
+];
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── INPUT LOCK (MUTEX) ───────────────────────────────────────────────────────
@@ -266,9 +286,11 @@ async function pollForUpdates() {
 async function loadFaceAPI() {
     log("[FaceEmotion] Loading face-api.js models...");
     try {
-        // Try local models first
+        // NOTE: faceLandmark68TinyNet is required when using TinyFaceDetector.
+        //       faceLandmark68Net is for SSD detector only — wrong model = no landmarks!
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
         await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
+        await faceapi.nets.faceLandmark68TinyNet.loadFromUri('/face-models');
         log("[FaceEmotion] Models loaded from local /face-models ✅");
     } catch (e) {
         log("[FaceEmotion] Local models not found — trying CDN...");
@@ -276,6 +298,7 @@ async function loadFaceAPI() {
             const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
             await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
             await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
+            await faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn);
             log("[FaceEmotion] Models loaded from CDN ✅");
         } catch (err) {
             console.error('[FaceEmotion] Model load failed:', err);
@@ -283,6 +306,7 @@ async function loadFaceAPI() {
         }
     }
 }
+
 
 function setupEventListeners() {
     const textInput = document.getElementById('text-input');
@@ -307,6 +331,11 @@ function setupEventListeners() {
     const gestureMenu = document.getElementById('gesture-menu');
 
     gestureBtn.addEventListener('click', (e) => {
+        if (isInterviewMode) {
+            log("Gestures are disabled in Interview Mode.");
+            _showBusyHint('Interview Mode (Gestures Disabled)');
+            return;
+        }
         e.stopPropagation();
         gestureMenu.classList.toggle('hidden');
     });
@@ -321,14 +350,118 @@ function setupEventListeners() {
     // Gesture Options
     document.querySelectorAll('.gesture-option-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            if (isInterviewMode) return;
             const gesture = btn.dataset.gesture;
             triggerManualGesture(gesture);
             gestureMenu.classList.add('hidden');
         });
     });
+
+    // Interview Mode
+    const interviewBtn = document.getElementById('interview-btn');
+    const resumeUpload = document.getElementById('resume-upload');
+    if (interviewBtn && resumeUpload) {
+        interviewBtn.addEventListener('click', () => {
+            // Stop other processing if something is going on, or just trigger click
+            if (_inputLocked) {
+                _showBusyHint('interview');
+                return;
+            }
+            resumeUpload.click();
+        });
+
+        resumeUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (!acquireInputLock('interview')) return;
+
+            log("Uploading resume for Interview Mode...");
+            addMessage("📄 Uploading resume and entering Interview Mode...", 'user');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/upload-resume', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    isInterviewMode = true;
+                    interviewStage  = 1;   // always start at stage 1
+
+                    if (avatar && avatar.setInterviewMode) {
+                        avatar.setInterviewMode(true);
+                    }
+
+                    // ── Pause gesture recognition immediately ──────────────────
+                    if (gestureHandler && gestureHandler.pause) gestureHandler.pause();
+
+                    // ── Force sitting animation ───────────────────────────────
+                    setTimeout(() => {
+                        if (avatar && avatar.animations && avatar.animations['interview_idle']) {
+                            avatar.playAnimation('interview_idle');
+                        }
+                    }, 300);
+
+                    // ── Show stage selector ──────────────────────────────────
+                    _showInterviewStageUI();
+
+                    addMessage(`Resume received!  Starting ${INTERVIEW_STAGE_LABELS[interviewStage]}. Whenever you're ready, say "Hi AURA" or type a message.`, 'aura');
+                    interviewBtn.style.background = '#27ae60';
+                    interviewBtn.title = 'Interview Mode Active';
+                    log("Interview Mode enabled. Gestures paused.");
+
+                    // ── Auto-start camera ────────────────────────────────────
+                    if (!cameraStream) {
+                        log("[Interview] Auto-starting camera for face emotion detection...");
+                        toggleCamera();
+                    }
+                } else {
+                    addMessage("⚠️ Error: " + (data.detail || data.message), 'aura');
+                }
+            } catch (error) {
+                console.error("Upload error:", error);
+                addMessage("⚠️ Failed to upload resume.", 'aura');
+            } finally {
+                resumeUpload.value = '';
+                releaseInputLock();
+            }
+        });
+    }
+
+    // ── Avatar Switcher ─────────────────────────────────────────────────
+    const avatarSelect = document.getElementById('avatar-select');
+    if (avatarSelect) {
+        // Populate options from catalog
+        if (avatar && avatar.AVATAR_CATALOG) {
+            avatar.AVATAR_CATALOG.forEach(entry => {
+                const opt = document.createElement('option');
+                opt.value = entry.key;
+                opt.textContent = entry.name;
+                avatarSelect.appendChild(opt);
+            });
+        }
+        avatarSelect.addEventListener('change', () => {
+            const key = avatarSelect.value;
+            log(`[Avatar] Switching to: ${key}`);
+            if (avatar && avatar.switchAvatar) avatar.switchAvatar(key);
+        });
+        // Update selector when avatar finishes loading
+        if (avatar) {
+            avatar.onAvatarSwitched = (key) => {
+                avatarSelect.value = key;
+            };
+        }
+    }
 }
 
 function triggerManualGesture(gesture) {
+    if (isInterviewMode) return;
     log(`Manual Gesture Triggered: ${gesture}`);
 
     // If voice is processing, play animation only — don't interrupt
@@ -385,37 +518,37 @@ async function sendMessage() {
     const rawText = input.value.trim();
     if (!rawText) return;
 
-    // If voice is currently processing, show a hint and keep the text
     if (_inputLocked && _lockSource === 'voice') {
         _showVoiceProcessingToast('text');
-        return;   // don't clear input, user can send after voice finishes
+        return;
     }
 
     if (!acquireInputLock('text')) return;
 
-    // Filter bad words before displaying and sending
     const text = filterBadWords(rawText);
 
     addMessage(text, 'user');
     input.value = '';
     input.disabled = true;
 
-    // Detect emotion from user's text keywords
     const userEmotion = detectEmotionFromText(text);
     if (userEmotion !== "neutral" && avatar && avatar.showEmotion) {
         log(`User text emotion detected: ${userEmotion}`);
         avatar.showEmotion(userEmotion, 0.5, false);
     }
 
+    // ── Inject interview stage context so LLM knows difficulty level ───────────
+    const stageHint = isInterviewMode ? _getInterviewStagePrompt() : '';
+    const finalText = isInterviewMode ? `[${stageHint}] ${text}` : text;
+
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            // Send text emotion AND face emotion as separate channels for server-side fusion
             body: JSON.stringify({
-                text: text,
-                emotion: userEmotion,          // from text keywords
-                face_emotion: cameraStream ? currentEmotion : "off"   // from camera face detection
+                text: finalText,
+                emotion: userEmotion,
+                face_emotion: cameraStream ? currentEmotion : "off"
             })
         });
 
@@ -429,6 +562,105 @@ async function sendMessage() {
         input.disabled = false;
     }
 }
+
+// ── Interview Stage Helpers ─────────────────────────────────────────────────
+/** Returns a short prompt hint injected into every message during interview mode */
+function _getInterviewStagePrompt() {
+    const hints = [
+        '',
+        'INTERVIEW_STAGE:1_SIMPLE — Ask only warm-up and introductory questions. Keep them simple and encouraging.',
+        'INTERVIEW_STAGE:2_MEDIUM — Ask core technical/behavioral questions at a moderate difficulty level.',
+        'INTERVIEW_STAGE:3_HARD — Ask challenging deep-dive questions requiring in-depth knowledge.',
+        'INTERVIEW_STAGE:4_EXPERT — Ask expert-level questions. Challenge every claim. Probe edge cases and trade-offs.'
+    ];
+    return hints[interviewStage] || hints[1];
+}
+
+/** Create the floating interview stage selector panel */
+function _showInterviewStageUI() {
+    let panel = document.getElementById('interview-stage-panel');
+    if (panel) { panel.style.display = 'flex'; return; }
+
+    panel = document.createElement('div');
+    panel.id = 'interview-stage-panel';
+    panel.style.cssText = [
+        'position:fixed', 'top:16px', 'left:50%', 'transform:translateX(-50%)',
+        'display:flex', 'gap:8px', 'align-items:center',
+        'background:rgba(10,10,20,0.88)', 'border:1px solid rgba(255,255,255,0.15)',
+        'border-radius:40px', 'padding:8px 18px', 'z-index:500',
+        'backdrop-filter:blur(12px)', 'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
+        'pointer-events:auto'
+    ].join(';');
+
+    const label = document.createElement('span');
+    label.style.cssText = 'color:#aaa;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;';
+    label.textContent = 'DIFFICULTY';
+    panel.appendChild(label);
+
+    const stages = [
+        { n: 1, icon: '🟢', title: 'Simple' },
+        { n: 2, icon: '🟡', title: 'Medium' },
+        { n: 3, icon: '🟠', title: 'Hard' },
+        { n: 4, icon: '🔴', title: 'Expert' }
+    ];
+
+    stages.forEach(({ n, icon, title }) => {
+        const btn = document.createElement('button');
+        btn.id = `stage-btn-${n}`;
+        btn.title = title;
+        btn.style.cssText = [
+            'background:none', 'border:2px solid transparent',
+            'color:white', 'font-size:20px', 'cursor:pointer',
+            'border-radius:50%', 'width:38px', 'height:38px',
+            'display:flex', 'align-items:center', 'justify-content:center',
+            'transition:all 0.2s'
+        ].join(';');
+        btn.textContent = icon;
+        btn.addEventListener('click', () => _setInterviewStage(n));
+        panel.appendChild(btn);
+    });
+
+    document.body.appendChild(panel);
+    _setInterviewStage(1);  // highlight stage 1 by default
+}
+
+/** Update the active stage, highlight selected button, show toast */
+function _setInterviewStage(n) {
+    interviewStage = n;
+    log(`[Interview] Stage → ${INTERVIEW_STAGE_LABELS[n]}`);
+
+    for (let i = 1; i <= 4; i++) {
+        const btn = document.getElementById(`stage-btn-${i}`);
+        if (!btn) continue;
+        if (i === n) {
+            btn.style.border = '2px solid #fff';
+            btn.style.background = 'rgba(255,255,255,0.15)';
+            btn.style.transform = 'scale(1.18)';
+        } else {
+            btn.style.border = '2px solid transparent';
+            btn.style.background = 'none';
+            btn.style.transform = 'scale(1)';
+        }
+    }
+    // Light toast — no input lock, panel stays visible always
+    _showStageToast(INTERVIEW_STAGE_LABELS[n]);
+}
+
+/** Animated toast appearing below the stage pill */
+function _showStageToast(label) {
+    let t = document.getElementById('stage-toast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'stage-toast';
+        t.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%) translateY(-6px);background:rgba(10,10,20,0.92);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:20px;padding:7px 20px;font-size:13px;font-weight:600;z-index:600;pointer-events:none;transition:opacity .25s,transform .25s;opacity:0;font-family:inherit;';
+        document.body.appendChild(t);
+    }
+    t.textContent = label;
+    requestAnimationFrame(() => { t.style.opacity='1'; t.style.transform='translateX(-50%) translateY(0)'; });
+    clearTimeout(t._h);
+    t._h = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(-6px)'; }, 2200);
+}
+
 
 
 // Simple local emotion detection from text keywords
@@ -1023,10 +1255,13 @@ function startFaceDetection(video) {
             // ── FIX: Show emotion on avatar face AND trigger body animation ──
             // triggerAnimation=true so face expression changes also play body anims
             // directly from the camera — no LLM call needed.
+            // If we are in interview mode, restrict certain face emotions from triggering body animations, just pass to LLM
+            let shouldAnimate = !isAuraTalking;
+            if (isInterviewMode && emotion !== 'neutral') {
+                shouldAnimate = false; // Interviewer persona holds face expressions but doesn't do wild body animations
+            }
+
             if (avatar && avatar.showEmotion && emotion !== 'neutral') {
-                // Only trigger body animation if AURA isn't currently talking
-                // (don't interrupt her own body animations mid-response)
-                const shouldAnimate = !isAuraTalking;
                 avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), shouldAnimate);
                 log(`[FaceEmotion] 🎭 Face→Avatar: ${emotion} (body anim: ${shouldAnimate})`);
             } else if (emotion === 'neutral' && avatar && avatar.showEmotion) {
@@ -1078,8 +1313,27 @@ function startFaceDetection(video) {
                 statusSpan.textContent = 'No face';
                 statusSpan.style.color = '#888';
                 _updateEmotionBar(null);
+
+                // ── Interview inattention: track how long face has been gone ──
+                if (isInterviewMode && !_inputLocked) {
+                    const now = Date.now();
+                    if (_interviewNoFaceStart === null) {
+                        _interviewNoFaceStart = now;
+                        _interviewInattentionFired = false;
+                        log('[Interview] Face lost — starting inattention timer...');
+                    } else if (!_interviewInattentionFired &&
+                               (now - _interviewNoFaceStart) >= INTERVIEW_INATTENTION_MS) {
+                        _interviewInattentionFired = true;
+                        _triggerInterviewInattention();
+                    }
+                }
                 return;
             }
+
+            // Face detected — reset inattention timer
+            _interviewNoFaceStart = null;
+            _interviewInattentionFired = false;
+
             // Green glow when face found
             video.style.border = '3px solid #00ff88';
             video.style.boxShadow = '0 0 18px #00cc66';
@@ -1090,7 +1344,55 @@ function startFaceDetection(video) {
     // Start the face-api.js detection loop on the video element
     faceDetector.start(video);
     log('[FaceEmotion] Face emotion detector started ✅');
+
+    // ── Head-turn detection callback (v4) ───────────────────────────────
+    faceDetector.onHeadTurn((direction) => {
+        if (!isInterviewMode || _inputLocked) return;
+
+        log(`[Interview] 🔄 Head turned ${direction} — AURA noticing...`);
+
+        const warnings = [
+            "Please keep your eyes on me — maintaining eye contact shows confidence.",
+            "Try to keep your head straight and face forward during the interview.",
+            "I noticed you looked to the side. In a real interview, focus on your interviewer!",
+            "Head positioning matters! Keep facing forward to make a strong impression.",
+        ];
+        const msg = warnings[Math.floor(Math.random() * warnings.length)];
+
+        if (!acquireInputLock('headturn')) return;
+
+        addMessage(msg, 'aura');
+
+        fetch('/api/animate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: msg, emotion: 'thinking' })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.audio_url) {
+                const audio = new Audio(data.audio_url);
+                window.currentAudio = audio;
+                avatar.setTalking(true);
+                audio.play().catch(() => {});
+                audio.onended = () => {
+                    avatar.setTalking(false);
+                    releaseInputLock();
+                    // Cool-down: reset head-turn state after AURA reacts
+                    setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+                };
+            } else {
+                releaseInputLock();
+                setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+            }
+        })
+        .catch(() => {
+            releaseInputLock();
+            setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
+        });
+    });
 }
+
 
 /** Called when camera is turned OFF */
 function stopFaceDetection() {
@@ -1182,4 +1484,72 @@ function triggerEmotionReaction(emotion) {
             statusSpan.style.fontWeight = '';
         }, 1200);
     }
+}
+
+// ── Interview Inattention Response ──────────────────────────────────────────────
+/**
+ * Called when the user has looked away from the camera for too long
+ * during an interview session. AURA reacts like a real interviewer.
+ */
+function _triggerInterviewInattention() {
+    if (!isInterviewMode || _inputLocked) return;
+
+    log('[Interview] 👀 Candidate looked away — AURA noticing inattention...');
+
+    // Pick a natural interviewer response at random
+    const reactions = [
+        "I notice you seem a bit distracted — are you still with me?",
+        "Hey, I'm up here! Eye contact is important in an interview.",
+        "It looks like something caught your attention. Shall we continue?",
+        "Just checking in — are you comfortable? Take a moment if you need to.",
+        "In a real interview, maintaining eye contact shows confidence. Let's keep going!"
+    ];
+    const reactionText = reactions[Math.floor(Math.random() * reactions.length)];
+
+    // Show a visual nudge in the status bar
+    const statusSpan = document.getElementById('current-emotion');
+    if (statusSpan) {
+        statusSpan.textContent = '👀 Looked away';
+        statusSpan.style.color = '#ff9f43';
+    }
+
+    // Don't acquire lock — just show the message and play TTS via /api/animate
+    // so the interviewer can "call out" the user without a full LLM round-trip
+    if (!acquireInputLock('inattention')) return;
+
+    addMessage(reactionText, 'aura');
+
+    fetch('/api/animate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: reactionText, emotion: 'thinking' })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.audio_url) {
+            const audio = new Audio(data.audio_url);
+            audio.preload = 'auto';
+            window.currentAudio = audio;
+            avatar.setTalking(true);
+            avatar.transitionToEmotion('thinking', 400, false);
+
+            audio.play().catch(e => log('[Inattention] Audio autoplay blocked: ' + e.message));
+
+            audio.onended = () => {
+                avatar.setTalking(false);
+                releaseInputLock();
+                // Re-enable inattention after a cooldown so AURA doesn't spam
+                setTimeout(() => {
+                    _interviewNoFaceStart = null;
+                    _interviewInattentionFired = false;
+                }, 8000);
+            };
+        } else {
+            releaseInputLock();
+        }
+    })
+    .catch(err => {
+        log('[Inattention] Error: ' + err.message);
+        releaseInputLock();
+    });
 }

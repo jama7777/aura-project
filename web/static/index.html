@@ -44,6 +44,15 @@
             <button id="camera-btn" class="control-btn" title="Toggle Camera">
                 📷
             </button>
+
+            <!-- Avatar Selector -->
+            <div class="avatar-selector-wrapper" title="Switch Avatar">
+                <span class="avatar-selector-icon">👤</span>
+                <select id="avatar-select">
+                    <!-- Options populated by JS from AVATAR_CATALOG -->
+                </select>
+            </div>
+
             <div class="input-wrapper">
                 <input type="text" id="text-input" placeholder="Type a message..." autocomplete="off">
                 <button id="send-btn" class="control-btn">➤</button>
@@ -59,13 +68,17 @@
                     <button class="gesture-option-btn" data-gesture="victory">✌️ Victory</button>
                     <button class="gesture-option-btn" data-gesture="clap">👏 Clap</button>
                     <button class="gesture-option-btn" data-gesture="dance">💃 Dance</button>
-                    <button class="gesture-option-btn" data-gesture="hug">🫂 Hug</button>
+                    <button class="gesture-option-btn" data-gesture="hug">🫲 Hug</button>
                 </div>
             </div>
-            <!-- Microphone Button for Voice Input -->
             <button id="mic-btn" class="control-btn" title="Click to Talk">
                 🎤
             </button>
+            <!-- Resume upload for Interview mode -->
+            <button id="interview-btn" class="control-btn" title="Start Mock Interview">
+                💼
+            </button>
+            <input type="file" id="resume-upload" accept="application/pdf" style="display: none;" />
         </div>
 
         <video id="user-camera" autoplay playsinline muted class="hidden"></video>
@@ -78,7 +91,7 @@
         </div>
     </div>
 
-    <script type="module" src="/static/js/main.js?v=27"></script>
+    <script type="module" src="/static/js/main.js?v=29"></script>
 </body>
 
 </html>

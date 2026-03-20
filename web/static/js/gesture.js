@@ -6,8 +6,22 @@ export class GestureHandler {
         this.camera = null;
         this.videoElement = document.getElementById('user-camera');
         this.isActive = false;
+        this.isPaused = false;    // true during interview mode
         this.lastGesture = null;
         this.gestureCooldown = 0;
+    }
+
+    /** Pause gesture callbacks (camera keeps running, hand tracking stops firing) */
+    pause() {
+        this.isPaused = true;
+        this.lastGesture = null;
+        console.log('[Gesture] Paused (interview mode)');
+    }
+
+    /** Resume gesture callbacks */
+    resume() {
+        this.isPaused = false;
+        console.log('[Gesture] Resumed');
     }
 
     init() {
@@ -66,6 +80,9 @@ export class GestureHandler {
     }
 
     onResults(results) {
+        // Block all gesture processing during interview mode
+        if (this.isPaused) return;
+
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
             return;
         }

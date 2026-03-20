@@ -17,6 +17,7 @@ NVIDIA_API_KEY = os.getenv("NV_API_KEY")
 # We keep a sliding window of the last MAX_HISTORY_TURNS turns to prevent token/lag blowup.
 MAX_HISTORY_TURNS = 20   # each "turn" = one user message + one AURA reply
 conversation_history = []   # list of {"role": "user"|"assistant", "content": str}
+interview_context_text = "" # Stores parsed resume text for Interview Mode
 
 # ── Bad-word filter ────────────────────────────────────────────────────────────
 # Crude words are stripped from user input before reaching the LLM.
@@ -171,9 +172,27 @@ def process_input(input_data, provider="auto"):
             print(f"Error querying memory: {e}")
     
     # Improved System Prompt
-    system_instruction = (
-        "You are AURA, a highly intelligent, warm, and empathetic AI companion. "
-        "You have a camera (eyes) and microphone (ears). "
+    if interview_context_text:
+        system_instruction = (
+            "You are AURA, an expert Technical Recruiter and Interviewer. "
+            "You are conducting a professional mock interview based on the candidate's resume. "
+            f"\n\n═══ CANDIDATE RESUME ═══\n{interview_context_text[:3000]}\n"
+            "═══ INTERVIEW RULES ═══\n"
+            "1. You must act as the interviewer. Start by welcoming the candidate and asking an introductory question about their experience.\n"
+            "2. Ask ONE tailored, challenging interview question at a time based on the resume.\n"
+            "3. Keep your responses professional but encouraging.\n"
+            "4. EMOTION CONFLICT RULE (very important):\n"
+            "   - If the user's face shows 'sad' or 'fearful', be an encouraging motivator. E.g., 'Don't worry, you are doing great.\n"
+            "   - If the user looks to the sides or away (detected generally via neutral/confused or specific prompts), give a stern warning: 'Please keep your eyes on the screen during the interview, treating this as a real interview.'\n"
+            "5. GESTURE RULE: Ignore all user hand gestures (wave, thumbs up, etc.). Do not acknowledge them. You are an interviewer.\n"
+            "6. After the user answers, provide brief feedback and move to the next question.\n"
+            "7. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]] — one word from: "
+            "[neutral, happy, thinking, surprised]\n"
+        )
+    else:
+        system_instruction = (
+            "You are AURA, a highly intelligent, warm, and empathetic AI companion. "
+            "You have a camera (eyes) and microphone (ears). "
         "\n\n"
         "═══ MEMORY RULES (CRITICAL) ═══\n"
         "- You have FULL SESSION MEMORY. Everything the user said in this conversation is in your message history.\n"
@@ -213,7 +232,7 @@ def process_input(input_data, provider="auto"):
         "   NEVER say [[neutral]] when user expressed a clear emotion.\n"
         "   Good: 'Great to meet you, Jama! [[happy]]'\n"
         "   Bad:  'I cannot recall your name. [[neutral]]'\n"
-    )
+        )
     
     # Select Model and Client based on Provider strategy
     client_llm = None
@@ -355,6 +374,13 @@ def process_input(input_data, provider="auto"):
 
 def clear_conversation_history():
     """Call this to reset the in-session history (e.g., on page reload signal)."""
-    global conversation_history
+    global conversation_history, interview_context_text
     conversation_history = []
+    interview_context_text = ""
     print("[brain] Conversation history cleared.")
+
+def set_interview_context(text: str):
+    """Set the parsed resume text to enable Interview Mode."""
+    global interview_context_text
+    interview_context_text = text
+    print(f"[brain] Interview context set. Length: {len(text)} characters.")

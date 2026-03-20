@@ -31,7 +31,7 @@ else:
 import sys
 sys.path.append(os.getcwd())
 
-from src.core.brain import process_input, clear_conversation_history
+from src.core.brain import process_input, clear_conversation_history, set_interview_context
 from src.output.tts import speak, load_tts_model
 from src.perception.audio import transcribe_audio_file, analyze_emotion_file, load_audio_models, load_text_emotion_model
 from src.perception.nv_ace import ace_client
@@ -111,6 +111,39 @@ async def clear_history_endpoint():
     """Reset the in-session conversation history. Called by the frontend on page load."""
     clear_conversation_history()
     return {"status": "cleared"}
+
+@app.post("/api/upload-resume")
+async def upload_resume(file: UploadFile = File(...)):
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    
+    # Save the file temporarily
+    temp_filename = f"temp_{uuid.uuid4()}.pdf"
+    with open(temp_filename, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        import PyPDF2
+        text = ""
+        with open(temp_filename, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+        
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from the PDF.")
+                
+        # Update the brain's context with the resume
+        set_interview_context(text)
+        
+        return {"status": "success", "message": "Resume parsed and Interview Mode enabled."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse resume: {str(e)}")
+    finally:
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
