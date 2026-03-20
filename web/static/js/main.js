@@ -11,6 +11,14 @@ let emotionStartTime = 0;
 let emotionCooldown = 0;
 let isInterviewMode = false;
 
+// ── Interview Inattention Tracking ──────────────────────────────────────────────
+// When the user looks away (face disappears from camera) during interview mode,
+// AURA reacts like a professional interviewer after a brief grace period.
+let _interviewNoFaceStart = null;     // timestamp when face was last lost
+const INTERVIEW_INATTENTION_MS = 3000;  // 3s before AURA reacts
+let _interviewInattentionFired = false; // so it only fires once per "look-away" event
+
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ─── INPUT LOCK (MUTEX) ───────────────────────────────────────────────────────
@@ -338,7 +346,7 @@ function setupEventListeners() {
     // Interview Mode
     const interviewBtn = document.getElementById('interview-btn');
     const resumeUpload = document.getElementById('resume-upload');
-    if(interviewBtn && resumeUpload) {
+    if (interviewBtn && resumeUpload) {
         interviewBtn.addEventListener('click', () => {
             // Stop other processing if something is going on, or just trigger click
             if (_inputLocked) {
@@ -347,27 +355,27 @@ function setupEventListeners() {
             }
             resumeUpload.click();
         });
-        
+
         resumeUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            
+
             if (!acquireInputLock('interview')) return;
-            
+
             log("Uploading resume for Interview Mode...");
             addMessage("📄 Uploading resume and entering Interview Mode...", 'user');
-            
+
             const formData = new FormData();
             formData.append('file', file);
-            
+
             try {
                 const response = await fetch('/api/upload-resume', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     isInterviewMode = true;
                     if (avatar && avatar.setInterviewMode) {
@@ -377,10 +385,17 @@ function setupEventListeners() {
                     interviewBtn.style.background = '#27ae60'; // Green to indicate active state
                     interviewBtn.title = 'Interview Mode Active';
                     log("Interview Mode enabled and Gestures disabled.");
+
+                    // ── Auto-start camera so AURA can read your face expressions ──
+                    // Only start if camera isn't already on
+                    if (!cameraStream) {
+                        log("[Interview] Auto-starting camera for face emotion detection...");
+                        toggleCamera();
+                    }
                 } else {
                     addMessage("⚠️ Error: " + (data.detail || data.message), 'aura');
                 }
-            } catch(error) {
+            } catch (error) {
                 console.error("Upload error:", error);
                 addMessage("⚠️ Failed to upload resume.", 'aura');
             } finally {
@@ -1146,8 +1161,27 @@ function startFaceDetection(video) {
                 statusSpan.textContent = 'No face';
                 statusSpan.style.color = '#888';
                 _updateEmotionBar(null);
+
+                // ── Interview inattention: track how long face has been gone ──
+                if (isInterviewMode && !_inputLocked) {
+                    const now = Date.now();
+                    if (_interviewNoFaceStart === null) {
+                        _interviewNoFaceStart = now;
+                        _interviewInattentionFired = false;
+                        log('[Interview] Face lost — starting inattention timer...');
+                    } else if (!_interviewInattentionFired &&
+                               (now - _interviewNoFaceStart) >= INTERVIEW_INATTENTION_MS) {
+                        _interviewInattentionFired = true;
+                        _triggerInterviewInattention();
+                    }
+                }
                 return;
             }
+
+            // Face detected — reset inattention timer
+            _interviewNoFaceStart = null;
+            _interviewInattentionFired = false;
+
             // Green glow when face found
             video.style.border = '3px solid #00ff88';
             video.style.boxShadow = '0 0 18px #00cc66';
@@ -1159,6 +1193,7 @@ function startFaceDetection(video) {
     faceDetector.start(video);
     log('[FaceEmotion] Face emotion detector started ✅');
 }
+
 
 /** Called when camera is turned OFF */
 function stopFaceDetection() {
@@ -1250,4 +1285,72 @@ function triggerEmotionReaction(emotion) {
             statusSpan.style.fontWeight = '';
         }, 1200);
     }
+}
+
+// ── Interview Inattention Response ──────────────────────────────────────────────
+/**
+ * Called when the user has looked away from the camera for too long
+ * during an interview session. AURA reacts like a real interviewer.
+ */
+function _triggerInterviewInattention() {
+    if (!isInterviewMode || _inputLocked) return;
+
+    log('[Interview] 👀 Candidate looked away — AURA noticing inattention...');
+
+    // Pick a natural interviewer response at random
+    const reactions = [
+        "I notice you seem a bit distracted — are you still with me?",
+        "Hey, I'm up here! Eye contact is important in an interview.",
+        "It looks like something caught your attention. Shall we continue?",
+        "Just checking in — are you comfortable? Take a moment if you need to.",
+        "In a real interview, maintaining eye contact shows confidence. Let's keep going!"
+    ];
+    const reactionText = reactions[Math.floor(Math.random() * reactions.length)];
+
+    // Show a visual nudge in the status bar
+    const statusSpan = document.getElementById('current-emotion');
+    if (statusSpan) {
+        statusSpan.textContent = '👀 Looked away';
+        statusSpan.style.color = '#ff9f43';
+    }
+
+    // Don't acquire lock — just show the message and play TTS via /api/animate
+    // so the interviewer can "call out" the user without a full LLM round-trip
+    if (!acquireInputLock('inattention')) return;
+
+    addMessage(reactionText, 'aura');
+
+    fetch('/api/animate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: reactionText, emotion: 'thinking' })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.audio_url) {
+            const audio = new Audio(data.audio_url);
+            audio.preload = 'auto';
+            window.currentAudio = audio;
+            avatar.setTalking(true);
+            avatar.transitionToEmotion('thinking', 400, false);
+
+            audio.play().catch(e => log('[Inattention] Audio autoplay blocked: ' + e.message));
+
+            audio.onended = () => {
+                avatar.setTalking(false);
+                releaseInputLock();
+                // Re-enable inattention after a cooldown so AURA doesn't spam
+                setTimeout(() => {
+                    _interviewNoFaceStart = null;
+                    _interviewInattentionFired = false;
+                }, 8000);
+            };
+        } else {
+            releaseInputLock();
+        }
+    })
+    .catch(err => {
+        log('[Inattention] Error: ' + err.message);
+        releaseInputLock();
+    });
 }

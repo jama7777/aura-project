@@ -28,6 +28,7 @@ export class Avatar {
         this._eyeLookTimeout = null;
         // Emotional recovery
         this._recoveryId = 0;
+        this.isInterviewMode = false;
     }
 
     log(msg) {
@@ -78,9 +79,9 @@ export class Avatar {
         container.appendChild(this.renderer.domElement);
 
         // Controls
-        const controls = new OrbitControls(this.camera, this.renderer.domElement);
-        controls.target.set(0, 100, 0);
-        controls.update();
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.target.set(0, 100, 0);
+        this.controls.update();
 
         // Create Desk/Table for Interview Mode
         this.createInterviewDesk();
@@ -102,64 +103,193 @@ export class Avatar {
     }
 
     createInterviewDesk() {
-        // Simple modern desk
+        // ── Realistic interview desk ─────────────────────────────────────────
+        // Coordinate reference:
+        //   Avatar feet  = y = 0
+        //   Avatar is ~160 units tall (head at y ≈ 160)
+        //   Real desk height ≈ y = 95  (just below chest when sitting)
+        // Strategy: place desk top at y=95, legs hang down to ground.
+        // The desk is pushed slightly in front of the avatar (z = -10)
+        // so the avatar appears to be seated BEHIND it from the camera.
         const deskGroup = new THREE.Group();
-        
-        // Table top (wood/dark material)
-        const topGeo = new THREE.BoxGeometry(180, 5, 80);
-        const topMat = new THREE.MeshPhongMaterial({ color: 0x3a2e24 });
+
+        const DESK_TOP_Y = 0;  // local origin — we'll position the group at y=95
+
+        // ── Table top ────────────────────────────────────────────────────────
+        // Wide (160), shallow depth (50), thin (4)
+        const topGeo = new THREE.BoxGeometry(160, 4, 50);
+        const topMat = new THREE.MeshPhongMaterial({
+            color: 0x3b2010,   // dark walnut
+            specular: 0x221108,
+            shininess: 45
+        });
         const topMesh = new THREE.Mesh(topGeo, topMat);
-        topMesh.position.y = 80; // height of the desk
+        topMesh.position.y = DESK_TOP_Y;
         topMesh.receiveShadow = true;
         topMesh.castShadow = true;
         deskGroup.add(topMesh);
 
-        // Legs (metal)
-        const legGeo = new THREE.CylinderGeometry(2, 2, 80);
-        const legMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
-        
-        const positions = [
-            [-80, 40, -30], [80, 40, -30],
-            [-80, 40, 30], [80, 40, 30]
+        // Front edge lip (decorative strip)
+        const lipGeo = new THREE.BoxGeometry(160, 2, 1);
+        const lipMat = new THREE.MeshPhongMaterial({ color: 0x1a0e06 });
+        const lipFront = new THREE.Mesh(lipGeo, lipMat);
+        lipFront.position.set(0, DESK_TOP_Y - 2, 25.5);
+        deskGroup.add(lipFront);
+
+        // ── Legs: four chunky square legs ────────────────────────────────────
+        // Each leg goes from just below the desk top down to y=0 (ground)
+        const LEG_HEIGHT = 95;   // matches deskGroup.position.y below
+        const legGeo = new THREE.BoxGeometry(5, LEG_HEIGHT, 5);
+        const legMat = new THREE.MeshPhongMaterial({
+            color: 0x222222,
+            specular: 0x555555,
+            shininess: 40
+        });
+        // Offsets from desk centre (half-width=75, half-depth=22)
+        const legPositions = [
+            [-72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2, -22],
+            [ 72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2, -22],
+            [-72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2,  22],
+            [ 72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2,  22]
         ];
-        
-        positions.forEach(pos => {
+        legPositions.forEach(([x, y, z]) => {
             const leg = new THREE.Mesh(legGeo, legMat);
-            leg.position.set(...pos);
-            leg.receiveShadow = true;
+            leg.position.set(x, y, z);
             leg.castShadow = true;
+            leg.receiveShadow = true;
             deskGroup.add(leg);
         });
 
-        deskGroup.position.set(0, 0, 70); // Positioned in front of the avatar
-        deskGroup.visible = false; // Hidden by default
+        // ── Desk accent panel between front legs ─────────────────────────────
+        const panelGeo = new THREE.BoxGeometry(139, 30, 1);
+        const panelMat = new THREE.MeshPhongMaterial({ color: 0x2a1808 });
+        const panel = new THREE.Mesh(panelGeo, panelMat);
+        panel.position.set(0, DESK_TOP_Y - 2 - 15, 22.5);
+        deskGroup.add(panel);
+
+        // ── Decorative items on the desk ─────────────────────────────────────
+
+        // Laptop base
+        const laptopGeo = new THREE.BoxGeometry(28, 1.5, 20);
+        const laptopMat = new THREE.MeshPhongMaterial({ color: 0x2c2c2e, specular: 0x666666, shininess: 70 });
+        const laptop = new THREE.Mesh(laptopGeo, laptopMat);
+        laptop.position.set(18, DESK_TOP_Y + 2.75, -8);
+        deskGroup.add(laptop);
+
+        // Laptop screen (slightly angled back toward avatar)
+        const screenGeo = new THREE.BoxGeometry(28, 18, 0.8);
+        const screenMat = new THREE.MeshPhongMaterial({ color: 0x101020, emissive: 0x0a0a1a, shininess: 120 });
+        const screen = new THREE.Mesh(screenGeo, screenMat);
+        screen.position.set(18, DESK_TOP_Y + 12, -17.5);
+        screen.rotation.x = THREE.MathUtils.degToRad(20);
+        deskGroup.add(screen);
+
+        // Screen glow (blue tint plane facing camera)
+        const glowGeo = new THREE.PlaneGeometry(25, 15);
+        const glowMat = new THREE.MeshBasicMaterial({ color: 0x1a3a6a, transparent: true, opacity: 0.6 });
+        const glow = new THREE.Mesh(glowGeo, glowMat);
+        glow.position.set(18, DESK_TOP_Y + 12, -17.2);
+        glow.rotation.x = THREE.MathUtils.degToRad(20);
+        deskGroup.add(glow);
+
+        // Notepad
+        const padGeo = new THREE.BoxGeometry(16, 0.5, 22);
+        const padMat = new THREE.MeshPhongMaterial({ color: 0xfff8e7 });
+        const pad = new THREE.Mesh(padGeo, padMat);
+        pad.position.set(-30, DESK_TOP_Y + 2.25, -5);
+        deskGroup.add(pad);
+
+        // Pen on notepad
+        const penGeo = new THREE.CylinderGeometry(0.5, 0.5, 16);
+        const penMat = new THREE.MeshPhongMaterial({ color: 0x1a1a80 });
+        const pen = new THREE.Mesh(penGeo, penMat);
+        pen.rotation.z = Math.PI / 2;
+        pen.position.set(-30, DESK_TOP_Y + 3.5, -12);
+        deskGroup.add(pen);
+
+        // Small coffee cup (cylinder)
+        const cupGeo = new THREE.CylinderGeometry(3.5, 2.8, 8, 16);
+        const cupMat = new THREE.MeshPhongMaterial({ color: 0xf5f5f5 });
+        const cup = new THREE.Mesh(cupGeo, cupMat);
+        cup.position.set(-55, DESK_TOP_Y + 6, 5);
+        deskGroup.add(cup);
+        // Coffee (dark liquid top)
+        const coffeeGeo = new THREE.CylinderGeometry(3.3, 3.3, 0.5, 16);
+        const coffeeMat = new THREE.MeshPhongMaterial({ color: 0x3a1f0d });
+        const coffee = new THREE.Mesh(coffeeGeo, coffeeMat);
+        coffee.position.set(-55, DESK_TOP_Y + 10, 5);
+        deskGroup.add(coffee);
+
+        // ── Position group: desk surface at y=95 (realistic seated height) ──
+        // z = -10 puts the desk in FRONT of the avatar so she's "behind" it
+        deskGroup.position.set(0, 95, -10);
+
+        deskGroup.visible = false;
         this.scene.add(deskGroup);
         this.interviewDesk = deskGroup;
     }
 
     setInterviewMode(active) {
         this.log(`Setting Interview Mode: ${active}`);
-        
+        this.isInterviewMode = active;
+
         if (active) {
-            // Show desk
+            // ── Show the desk ──────────────────────────────────────────────
             if (this.interviewDesk) this.interviewDesk.visible = true;
-            
-            // Move camera to a desk framing
-            // Original: set(0, 150, 400) -> Zoom in slightly closer for an interview feel
-            this.camera.position.set(0, 130, 300);
-            
-            // Switch to sitting animation
+
+            // ── Scene: remove grid / darken background for professional look ─
+            this.scene.background = new THREE.Color(0x0d0d14);  // dark office blue
+            this.scene.fog = new THREE.Fog(0x0d0d14, 300, 900);
+
+            // ── Camera: looking at AURA's face from across the desk ─────────
+            // Avatar upper body is ~80-160 (waist to head). Desk top at y=95.
+            // Camera sits at y=145 (eye-level), z=260 (across the desk).
+            // Smoothly animate camera to position
+            this.camera.position.set(0, 145, 260);
+            if (this.controls) {
+                // Target AURA's face (y≈140) slightly above desk
+                this.controls.target.set(0, 135, 0);
+                this.controls.minDistance = 80;
+                this.controls.maxDistance = 350;
+                this.controls.update();
+            }
+
+            // ── Animation: sitting pose ────────────────────────────────────
             if (this.animations['interview_idle']) {
                 this.playAnimation('interview_idle');
             }
+
+            // ── Add a warm desk lamp light ─────────────────────────────────
+            if (!this._deskLamp) {
+                const deskLight = new THREE.PointLight(0xfff5e0, 2.0, 250);
+                deskLight.position.set(-40, 150, 30);
+                this.scene.add(deskLight);
+                this._deskLamp = deskLight;
+            }
+
         } else {
-            // Hide desk
+            // ── Hide desk ──────────────────────────────────────────────────
             if (this.interviewDesk) this.interviewDesk.visible = false;
-            
-            // Restore camera
+
+            // ── Restore scene ──────────────────────────────────────────────
+            this.scene.background = new THREE.Color(0x111111);
+            this.scene.fog = new THREE.Fog(0x111111, 200, 1000);
+
+            if (this._deskLamp) {
+                this.scene.remove(this._deskLamp);
+                this._deskLamp = null;
+            }
+
+            // ── Restore default camera ─────────────────────────────────────
             this.camera.position.set(0, 150, 400);
-            
-            // Switch to standing idle
+            if (this.controls) {
+                this.controls.target.set(0, 100, 0);
+                this.controls.minDistance = 0;
+                this.controls.maxDistance = Infinity;
+                this.controls.update();
+            }
+
+            // ── Switch back to standing idle ───────────────────────────────
             this.playAnimation('idle');
         }
     }
@@ -1168,6 +1298,19 @@ export class Avatar {
      * Handles animation queuing to prevent conflicts
      */
     playEmotionAnimation(emotion, intensity = 1.0) {
+        // In Interview Mode, we suppress dramatic body animations (dance, jump, clap)
+        // to maintain a professional "interviewer" posture.
+        // Only allow subtle face-driven sitting expressions.
+        if (this.isInterviewMode) {
+            this.log(`[Interview] Suppressing body animation for ${emotion} (facial expression only)`);
+
+            // Special case: if we have 'Sitting Laughing' and they are happy, we COULD play it,
+            // but for a "real interviewer type" feel, keeping it to just face is often better.
+            // Let's stick to face + the steady sitting pose.
+            this.processEmotionQueue();
+            return;
+        }
+
         // Check if ANY animations are available first
         const availableAnimations = Object.keys(this.animations || {});
         if (availableAnimations.length === 0) {
