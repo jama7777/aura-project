@@ -53,24 +53,29 @@ export class Avatar {
 
         // Scene
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x111111);
-        this.scene.fog = new THREE.Fog(0x111111, 200, 1000);
+        this.scene.background = new THREE.Color(0x020205);
+        
+        // Dynamic 3D Environment Setup
+        this.createStarfield();
+        this.createPlanet();
 
-        // Camera
+        // Camera - position for a centered portrait view
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-        this.camera.position.set(0, 150, 400);
+        this.camera.position.set(0, 10, 300); // Further back, slightly up
 
         // Lights
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
         hemiLight.position.set(0, 200, 0);
         this.scene.add(hemiLight);
 
+        // DIR Light
         const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
         dirLight.position.set(0, 200, 100);
         dirLight.castShadow = true;
         this.scene.add(dirLight);
 
-        // Ground
+        // Ground/Grid removed for Space Environment
+        /*
         const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false }));
         mesh.rotation.x = - Math.PI / 2;
         mesh.receiveShadow = true;
@@ -80,6 +85,7 @@ export class Avatar {
         grid.material.opacity = 0.2;
         grid.material.transparent = true;
         this.scene.add(grid);
+        */
 
         // Renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -88,9 +94,12 @@ export class Avatar {
         this.renderer.shadowMap.enabled = true;
         container.appendChild(this.renderer.domElement);
 
-        // Controls
+        // Controls - LOCKED for a cinematic fixed view
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.target.set(0, 100, 0);
+        this.controls.target.set(0, 0, 0); // Focus on avatar center
+        this.controls.enableRotate = false; // Locked
+        this.controls.enableZoom = false;   // Locked
+        this.controls.enablePan = false;    // Locked
         this.controls.update();
 
         // Create Desk/Table for Interview Mode
@@ -632,6 +641,50 @@ export class Avatar {
                 this.model = object;
             });
         });
+    }
+
+    createStarfield() {
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
+        
+        const starsVertices = [];
+        for (let i = 0; i < 3000; i++) {
+            const x = THREE.MathUtils.randFloatSpread(4000);
+            const y = THREE.MathUtils.randFloatSpread(4000);
+            const z = THREE.MathUtils.randFloatSpread(4000);
+            if (Math.abs(x) < 500 && Math.abs(y) < 500 && Math.abs(z) < 500) continue;
+            starsVertices.push(x, y, z);
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        this.starField = new THREE.Points(starsGeometry, starsMaterial);
+        this.scene.add(this.starField);
+    }
+
+    createPlanet() {
+        const planetGeom = new THREE.SphereGeometry(1500, 64, 64);
+        const planetMat = new THREE.MeshPhongMaterial({ 
+            color: 0x1a2b4c, 
+            emissive: 0x051020,
+            specular: 0x555555,
+            shininess: 20
+        });
+        
+        this.planet = new THREE.Mesh(planetGeom, planetMat);
+        this.planet.position.set(0, -1575, 0); 
+        this.planet.receiveShadow = true;
+        this.scene.add(this.planet);
+        
+        const atmosGeom = new THREE.SphereGeometry(1520, 64, 64);
+        const atmosMat = new THREE.MeshBasicMaterial({
+            color: 0x4488ff,
+            transparent: true,
+            opacity: 0.1,
+            side: THREE.BackSide
+        });
+        const atmos = new THREE.Mesh(atmosGeom, atmosMat);
+        atmos.position.set(0, -1575, 0);
+        this.scene.add(atmos);
     }
 
     loadFBXAnimations() {
@@ -1525,6 +1578,23 @@ export class Avatar {
 
         const delta = this.clock.getDelta();
         if (this.mixer) this.mixer.update(delta);
+
+        if (this.planet) {
+            this.planet.rotation.y += 0.001; // slowly spin the planet
+        }
+        
+        // Moving Space Effect (stars flying towards camera like a video)
+        if (this.starField) {
+            this.starField.rotation.y += 0.0002; // slow galaxy drift
+            const positions = this.starField.geometry.attributes.position.array;
+            for(let i = 2; i < positions.length; i += 3) {
+                positions[i] += 4; // Move star forward along Z-axis
+                if (positions[i] > 1000) {
+                    positions[i] = -3000; // Reset star deep into the background when it passes camera
+                }
+            }
+            this.starField.geometry.attributes.position.needsUpdate = true;
+        }
 
         this.renderer.render(this.scene, this.camera);
     }

@@ -127,12 +127,19 @@ window._setAuraTalking = (v) => { isAuraTalking = v; };  // debug helper
 window._isLocked = () => _inputLocked;                   // debug helper
 
 const gestureHandler = new GestureHandler(avatar, (gesture) => {
-    // If VOICE is currently processing, play the animation locally but DON'T send
-    // a new API request — gesture animations still work, voice chat is uninterrupted.
-    if (_inputLocked && _lockSource === 'voice') {
-        log(`[Gesture] Voice processing — playing animation for ${gesture}, skip API call.`);
+    const textInput = document.getElementById('text-input');
+    const isTyping = textInput && (document.activeElement === textInput || textInput.value.trim().length > 0);
+
+    // If system is busy (recording, processing, or AURA is talking) OR user is passively typing,
+    // play the animation locally so the avatar still reacts, but DO NOT send a new API request.
+    if (isRecording || _inputLocked || isAuraTalking || isTyping) {
+        log(`[Gesture] System busy or typing — playing animation locally for ${gesture}, skip API call.`);
         _playGestureAnimationOnly(gesture);
-        _showVoiceProcessingToast(gesture);
+        
+        // Show toast if voice is actively recording or processing
+        if (isRecording || _lockSource === 'voice') {
+            _showVoiceProcessingToast(gesture);
+        }
         return;
     }
 
@@ -144,7 +151,12 @@ const gestureHandler = new GestureHandler(avatar, (gesture) => {
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: "", emotion: currentEmotion, gesture: gesture })
+        body: JSON.stringify({ 
+            text: "", 
+            emotion: "neutral", 
+            face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off", 
+            gesture: gesture 
+        })
     })
         .then(res => res.json())
         .then(data => handleResponse(data))
@@ -464,10 +476,18 @@ function triggerManualGesture(gesture) {
     if (isInterviewMode) return;
     log(`Manual Gesture Triggered: ${gesture}`);
 
-    // If voice is processing, play animation only — don't interrupt
-    if (_inputLocked && _lockSource === 'voice') {
+    const textInput = document.getElementById('text-input');
+    const isTyping = textInput && (document.activeElement === textInput || textInput.value.trim().length > 0);
+
+    // If system is busy (recording, processing, or AURA is talking) OR user is typing,
+    // play the animation locally so the avatar still reacts, but DO NOT send a new API request.
+    if (isRecording || _inputLocked || isAuraTalking || isTyping) {
+        log(`[Gesture] System busy or typing — playing animation locally for ${gesture}, skip API call.`);
         _playGestureAnimationOnly(gesture);
-        _showVoiceProcessingToast(gesture);
+        
+        if (isRecording || _lockSource === 'voice') {
+            _showVoiceProcessingToast(gesture);
+        }
         return;
     }
 
@@ -479,7 +499,12 @@ function triggerManualGesture(gesture) {
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: "", emotion: currentEmotion, gesture: gesture })
+        body: JSON.stringify({ 
+            text: "", 
+            emotion: "neutral", 
+            face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off", 
+            gesture: gesture 
+        })
     })
         .then(res => res.json())
         .then(data => handleResponse(data))
@@ -547,8 +572,9 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 text: finalText,
-                emotion: userEmotion,
-                face_emotion: cameraStream ? currentEmotion : "off"
+                emotion: userEmotion,          // from text keywords
+                face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off",   // from camera face detection
+                gesture: gestureHandler.lastGesture || "none"
             })
         });
 
@@ -894,9 +920,10 @@ async function sendToServerForTranscription(audioBlob) {
     const formData = new FormData();
     formData.append('file', audioBlob, `recording.${extension}`);
     // Include the live face-camera emotion so the server can fuse it with audio emotion
-    const faceEmo = cameraStream ? currentEmotion : "off";
+    const faceEmo = typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off";
     formData.append('face_emotion', faceEmo);
-    log(`[Voice] Sending ${(audioBlob.size / 1024).toFixed(1)}KB (${type}) with face_emotion: ${faceEmo}`);
+    formData.append('gesture', gestureHandler.lastGesture || "none");
+    log(`[Voice] Sending ${(audioBlob.size / 1024).toFixed(1)}KB (${type}) with face_emotion: ${faceEmo}, gesture: ${formData.get('gesture')}`);
 
     try {
         log("Sending audio to server...");
@@ -943,7 +970,9 @@ async function sendToServerForTranscription(audioBlob) {
 
 
 function handleResponse(data) {
-    addMessage(data.text, 'aura');
+    if (data.text && data.text.trim().length > 0) {
+        addMessage(data.text, 'aura');
+    }
 
     // Show the detected emotion on the avatar's face immediately
     const responseEmotion = data.emotion || "neutral";
@@ -1023,6 +1052,14 @@ function handleResponse(data) {
             releaseInputLock();
             log('Audio playback finished.');
         };
+    } else {
+        // No audio payload (e.g., pure visual gesture feedback).
+        // Trigger any custom animations if returned explicitly.
+        if (data.animations && data.animations.length > 0 && avatar && avatar.playAnimation) {
+            avatar.playAnimation(data.animations[0], true);
+        }
+        _resetMicBtn();
+        releaseInputLock();
     }
     // NOTE: Body animations are driven by transitionToEmotion() above — no need to double-play here.
 }

@@ -151,6 +151,29 @@ async def chat(request: ChatRequest):
     fused_emotion = fuse_emotions(request.emotion, request.face_emotion)
     print(f"Received chat: {request.text} | text_emo={request.emotion} face_emo={request.face_emotion} → fused={fused_emotion} | Gesture: {request.gesture}")
 
+    # NEW: If text is totally empty but gesture exists, just return animations! NO LLM!
+    if not request.text or not request.text.strip():
+        if request.gesture and request.gesture != "none":
+            animations = []
+            req_g = request.gesture.lower()
+            if "thumbs_up" in req_g: animations.append("happy")
+            elif "victory" in req_g: animations.append("dance")
+            elif "wave" in req_g: animations.append("clap")
+            elif "clap" in req_g: animations.append("clap")
+            elif "dance" in req_g: animations.append("dance")
+            elif "hug" in req_g: animations.append("happy")
+            
+            if not animations:
+                animations = ["idle"]
+                
+            return {
+                "text": "",
+                "emotion": "neutral",
+                "audio_url": None,
+                "blendshapes": {},
+                "animations": animations
+            }
+
     # Process input — pass both the fused emotion AND the raw face emotion so
     # the brain can detect conflicts between what the face shows vs what words say
     processed_result = process_input(
@@ -363,7 +386,7 @@ async def process_a2f(request: A2FRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/audio")
-async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral")):
+async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral"), gesture: str = Form("none")):
     import subprocess
     
     # Save the uploaded audio file
@@ -448,7 +471,8 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
     processed_result = process_input({
         "text": text,
         "emotion": fused_emotion,
-        "face_emotion": face_emotion   # raw camera emotion for conflict detection
+        "face_emotion": face_emotion,   # raw camera emotion for conflict detection
+        "gesture": gesture
     })
     response_text = processed_result["text"]
     response_emotion = processed_result["emotion"]
@@ -465,13 +489,32 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
     animations = []
     lower_resp = response_text.lower()
     
-    if "hug" in lower_resp: animations.append("happy")
-    if "dance" in lower_resp: animations.append("dance")
-    if "happy" in lower_resp: animations.append("happy")
-    if "sad" in lower_resp or "cry" in lower_resp: animations.append("sad")
-    if "clap" in lower_resp: animations.append("clap")
-    if "pray" in lower_resp: animations.append("pray")
-    if "jump" in lower_resp: animations.append("jump")
+    if gesture and gesture != "none":
+        if "thumbs_up" in gesture: animations.append("happy")
+        elif "victory" in gesture: animations.append("dance")
+        elif "wave" in gesture: animations.append("clap")
+        elif "clap" in gesture: animations.append("clap")
+        elif "dance" in gesture: animations.append("dance")
+        elif "hug" in gesture: animations.append("happy")
+        
+    emo = response_emotion
+    if not animations:
+        if emo in ["happy", "funny"]: animations.append("happy")
+        elif emo == "excited": animations.append("clap")
+        elif emo == "sad": animations.append("sad")
+        elif emo == "tired": animations.append("crouch")
+        elif emo == "surprised": animations.append("jump")
+        elif emo == "angry": animations.append("sad")
+        elif emo == "grateful": animations.append("pray")
+    
+    if not animations:
+        if "hug" in lower_resp: animations.append("happy")
+        if "dance" in lower_resp: animations.append("dance")
+        if "happy" in lower_resp or "laugh" in lower_resp: animations.append("happy")
+        if "sad" in lower_resp or "cry" in lower_resp: animations.append("sad")
+        if "clap" in lower_resp: animations.append("clap")
+        if "pray" in lower_resp or "thanks" in lower_resp: animations.append("pray")
+        if "jump" in lower_resp or "wow" in lower_resp: animations.append("jump")
     
     if not animations:
         animations = ["idle"]

@@ -152,14 +152,13 @@ def process_input(input_data, provider="auto"):
             f"{user_input_desc} "
             f"[Note for AURA: Camera shows user looks {face_emotion}, "
             f"but their words suggest they feel {emotion}. "
-            f"Acknowledge this mismatch warmly in your reply.] "
-            f"Gesture: {gesture}."
+            f"Acknowledge this mismatch warmly in your reply.]"
         )
     elif face_emotion == 'off':
         # Camera is disabled — LLM must NOT comment on user face
-        query = f"{user_input_desc} Emotion: {emotion}. [Note: Your camera/eyes are currently OFF. Do NOT comment on the user's facial expression.] Gesture: {gesture}."
+        query = f"{user_input_desc} Emotion: {emotion}. [Note: Your camera/eyes are currently OFF. Do NOT comment on the user's facial expression.]"
     else:
-        query = f"{user_input_desc} Emotion: {emotion}. Face: {face_emotion}. Gesture: {gesture}."
+        query = f"{user_input_desc} Emotion: {emotion}. Face: {face_emotion}."
     
     context = ""
     if collection:
@@ -203,12 +202,7 @@ def process_input(input_data, provider="auto"):
         "\n"
         "═══ INTERACTION RULES ═══\n"
         "1. Respond naturally in 1-2 short sentences. Never be verbose.\n"
-        "2. GESTURE: If 'Gesture' is NOT 'none', acknowledge it FIRST:\n"
-        "   - 'victory' → 'Peace!', 'Yay!', 'You rock!'\n"
-        "   - 'thumbs_up' → 'Awesome!', 'Great job!'\n"
-        "   - 'open_palm' → 'High five!', 'Hey!'\n"
-        "   - 'fist' → 'Bump!', 'Power!'\n"
-        "3. EMOTION: Mirror the user's emotion in tone. Use their name if you know it.\n"
+        "2. EMOTION: Mirror the user's emotion in tone. Use their name if you know it.\n"
         "   - happy/excited → respond warmly → [[happy]] or [[excited]]\n"
         "   - sad/down → be supportive → [[sad]]\n"
         "   - angry/frustrated → stay calm and validating → [[angry]]\n"
