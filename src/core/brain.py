@@ -15,7 +15,7 @@ NVIDIA_API_KEY = os.getenv("NV_API_KEY")
 # Stores the full multi-turn chat for the current server session.
 # Resets when the server restarts (i.e., when the user refreshes the page in --reload mode).
 # We keep a sliding window of the last MAX_HISTORY_TURNS turns to prevent token/lag blowup.
-MAX_HISTORY_TURNS = 20   # each "turn" = one user message + one AURA reply
+MAX_HISTORY_TURNS = 10   # each "turn" = one user message + one AURA reply
 conversation_history = []   # list of {"role": "user"|"assistant", "content": str}
 interview_context_text = "" # Stores parsed resume text for Interview Mode
 
@@ -170,7 +170,7 @@ def process_input(input_data, provider="auto"):
                 search_query = f"user name identity person who is {query}"
                 print(f"[brain] Identity query detected, using boosted search: '{search_query}'")
 
-            results = collection.query(query_texts=[search_query], n_results=20)
+            results = collection.query(query_texts=[search_query], n_results=10)
             if results['documents'] and results['documents'][0]:
                 unique_docs = []
                 for doc in results['documents'][0]:
@@ -297,17 +297,18 @@ def process_input(input_data, provider="auto"):
         # Fallback attempt if NVIDIA failed but we really want a response
         if provider == "auto" and "meta/llama" in model_name:
              try:
-                 print("Fallback to OpenRouter...")
-                 client_llm = get_llm_client("openrouter")
-                 completion = client_llm.chat.completions.create(
-                    model="openai/gpt-4o-mini",
-                    messages=messages_to_send
-                 )
-                 response = completion.choices[0].message.content
+                 print("Fallback to Gemini...")
+                 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+                 gemini_model = genai.GenerativeModel("models/gemini-2.0-flash")
+                 
+                 prompt = ""
+                 for msg in messages_to_send:
+                     prompt += f"{msg['role'].upper()}: {msg['content']}\n\n"
+                     
+                 result = gemini_model.generate_content(prompt)
+                 response = result.text.strip()
              except Exception as e2:
                  print(f"Fallback failed: {e2}")
-
-            
     # Parse Emotion
     import re
 

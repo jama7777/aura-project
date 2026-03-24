@@ -30,29 +30,17 @@ def load_audio_models():
 
     if emotion_model is None:
         try:
-            print("Loading Audio Emotion model (high-accuracy, 8 emotions)...")
+            print("Loading Audio Emotion model (high-accuracy, 4 emotions)...")
             from transformers import pipeline
-            # ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition
-            # — XLS-R Large fine-tuned for speech emotion, 8 labels, much higher accuracy
-            # than the old superb/wav2vec2-base-superb-er (4 labels only)
             emotion_model = pipeline(
                 "audio-classification",
-                model="ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition",
+                model="superb/wav2vec2-base-superb-er",
                 top_k=1
             )
-            print("Audio Emotion model loaded (XLS-R Large, 8 emotions).")
+            print("Audio Emotion model loaded (SUPERB, 4 emotions).")
         except Exception as e:
-            print(f"Error loading XLS-R emotion model ({e}), falling back to base model...")
-            try:
-                emotion_model = pipeline(
-                    "audio-classification",
-                    model="superb/wav2vec2-large-superb-er",   # Large version of SUPERB
-                    top_k=1
-                )
-                print("Audio Emotion fallback model loaded (wav2vec2-large-superb-er).")
-            except Exception as e2:
-                print(f"Error loading fallback emotion model: {e2}")
-                emotion_model = None
+            print(f"Error loading emotion model: {e}")
+            emotion_model = None
 
 def load_text_emotion_model():
     global text_emotion_classifier
