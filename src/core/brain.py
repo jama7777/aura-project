@@ -163,10 +163,25 @@ def process_input(input_data, provider="auto"):
     context = ""
     if collection:
         try:
-            # Query memory
-            results = collection.query(query_texts=[query], n_results=3)
-            if results['documents']:
-                context = "\n".join(results['documents'][0])
+            # Deep Query memory to ensure we catch details like a user's name even if buried
+            # If the user is asking about identity/name, we boost the search terms
+            search_query = query
+            if "name" in text.lower() or "who am i" in text.lower():
+                search_query = f"user name identity person who is {query}"
+                print(f"[brain] Identity query detected, using boosted search: '{search_query}'")
+
+            results = collection.query(query_texts=[search_query], n_results=20)
+            if results['documents'] and results['documents'][0]:
+                unique_docs = []
+                for doc in results['documents'][0]:
+                    if doc not in unique_docs:
+                        unique_docs.append(doc)
+                context = "\n".join(unique_docs)
+                print(f"[brain] Memory query successful. Found {len(unique_docs)} unique fragments.")
+                if unique_docs:
+                    print(f"[brain] Top fragment: {unique_docs[0][:100]}...")
+            else:
+                 print("[brain] Memory query returned no results.")
         except Exception as e:
             print(f"Error querying memory: {e}")
     
@@ -254,7 +269,13 @@ def process_input(input_data, provider="auto"):
         # Build the user's turn message with full context
         user_turn_content = f"Current Situation:\n{query}"
         if context:
-            user_turn_content = f"Memory Context:\n{context}\n\n{user_turn_content}"
+            user_turn_content = (
+                f"--- PAST MEMORY FRAGMENTS ---\n"
+                f"{context}\n"
+                f"-----------------------------\n"
+                f"SYSTEM DIRECTIVE: Scan the memory fragments above. If the user's name or any personal fact is mentioned ANYWHERE in the fragments, you MUST use it as absolute truth. Ignore any fragments where you previously apologized for not knowing their name.\n\n"
+                f"{user_turn_content}"
+            )
 
         # Append the new user message to the running history
         conversation_history.append({"role": "user", "content": user_turn_content})
@@ -372,6 +393,20 @@ def clear_conversation_history():
     conversation_history = []
     interview_context_text = ""
     print("[brain] Conversation history cleared.")
+
+def clear_long_term_memory():
+    """Wipes the entire ChromaDB collection for a fresh start."""
+    global collection, client
+    if client:
+        try:
+            client.delete_collection("user_memory")
+            collection = client.create_collection("user_memory")
+            print("[brain] LONG-TERM MEMORY WIPED.")
+            return True
+        except Exception as e:
+            print(f"Error wiping memory: {e}")
+            return False
+    return False
 
 def set_interview_context(text: str):
     """Set the parsed resume text to enable Interview Mode."""

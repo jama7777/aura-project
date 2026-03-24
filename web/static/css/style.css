@@ -200,6 +200,11 @@ html {
     box-shadow: 0 0 15px var(--primary-color);
 }
 
+#new-chat-btn:hover {
+    background: rgba(255, 235, 59, 0.4) !important;
+    box-shadow: 0 0 15px rgba(255, 235, 59, 0.3);
+}
+
 .input-wrapper {
     display: flex;
     align-items: center;
@@ -310,4 +315,32 @@ html {
 #avatar-select option {
     background: #1a1a2e;
     color: white;
+}
+
+/* ── Auto-Correction Badge ──────────────────────────────────────────────────── */
+#correction-badge {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: linear-gradient(135deg, rgba(108, 92, 231, 0.92), rgba(0, 206, 201, 0.92));
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 18px;
+    border-radius: 24px;
+    z-index: 400;
+    pointer-events: none;
+    opacity: 0;
+    display: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    box-shadow: 0 4px 18px rgba(108, 92, 231, 0.45);
+    white-space: nowrap;
+    max-width: 90vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }

@@ -248,6 +248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    /* 
     // Clear the server-side conversation history on every fresh page load
     try {
         await fetch('/api/clear-history', { method: 'POST' });
@@ -255,6 +256,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {
         log('[Session] Could not clear history (server may be starting up).');
     }
+    */
 
     window.onerror = function (message, source, lineno, colno, error) {
         log(`Global Error: ${message} at ${source}:${lineno}`);
@@ -333,6 +335,29 @@ function setupEventListeners() {
 
     // Camera Toggle
     cameraBtn.addEventListener('click', toggleCamera);
+
+    // New Chat (Clear Memory)
+    const newChatBtn = document.getElementById('new-chat-btn');
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', async () => {
+            if (confirm("Clear memory and start a new chat?")) {
+                try {
+                    const res = await fetch('/api/clear-history', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        // Clear chat UI
+                        document.getElementById('chat-history').innerHTML = '';
+                        addMessage("✨ Memory fully cleared. How can I help you today?", "aura");
+                        log("[NewChat] Memory wiped and UI reset.");
+                        if (avatar) avatar.playAnimation('happy');
+                    }
+                } catch (e) {
+                    log(`[NewChat] Error clearing memory: ${e.message}`);
+                    alert("Could not clear memory. Please try again.");
+                }
+            }
+        });
+    }
 
     // Microphone Toggle (Click to Start/Stop Recording)
     const micBtn = document.getElementById('mic-btn');
@@ -538,6 +563,76 @@ function filterBadWords(text) {
 
 // toggleRecording removed - used toggleMicrophone instead
 
+// ── Text / Voice Correction ─────────────────────────────────────────────────
+/**
+ * Call the server-side correction endpoint.
+ * Returns { corrected, original, changed, corrections[] } (or original on failure).
+ */
+async function correctText(raw, source = 'text') {
+    try {
+        const res = await fetch('/api/correct-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: raw, source })
+        });
+        if (!res.ok) return { corrected: raw, original: raw, changed: false, corrections: [] };
+        return await res.json();
+    } catch (e) {
+        log(`[Correction] API error: ${e.message}`);
+        return { corrected: raw, original: raw, changed: false, corrections: [] };
+    }
+}
+
+/**
+ * Show a subtle animated correction badge in the chat.
+ * e.g.  ✏️ Corrected: "helo" → "hello"
+ */
+function showCorrectionBadge(corrections, source = 'text') {
+    let label;
+    if (corrections && corrections.length > 0) {
+        const pairs = corrections.slice(0, 3).map(c => `"${c.original}" → "${c.corrected}"`).join(', ');
+        label = `✏️ Auto-corrected: ${pairs}`;
+    } else {
+        label = source === 'voice' ? '✏️ Voice transcript corrected' : '✏️ Spelling corrected';
+    }
+
+    let badge = document.getElementById('correction-badge');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'correction-badge';
+        badge.style.cssText = [
+            'position:fixed', 'bottom:100px', 'left:50%', 'transform:translateX(-50%) translateY(10px)',
+            'background:linear-gradient(135deg,rgba(108,92,231,0.92),rgba(0,206,201,0.92))',
+            'color:#fff', 'font-size:12px', 'font-weight:600',
+            'padding:7px 18px', 'border-radius:24px', 'z-index:400',
+            'pointer-events:none', 'opacity:0',
+            'transition:opacity .3s ease,transform .3s ease',
+            'box-shadow:0 4px 18px rgba(108,92,231,0.45)',
+            'white-space:nowrap', 'max-width:90vw',
+            'overflow:hidden', 'text-overflow:ellipsis',
+            'font-family:inherit', 'letter-spacing:0.3px'
+        ].join(';');
+        document.body.appendChild(badge);
+    }
+
+    badge.textContent = label;
+    badge.style.opacity = '0';
+    badge.style.transform = 'translateX(-50%) translateY(10px)';
+    badge.style.display = 'block';
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            badge.style.opacity = '1';
+            badge.style.transform = 'translateX(-50%) translateY(0)';
+        });
+    });
+
+    clearTimeout(badge._hideTimer);
+    badge._hideTimer = setTimeout(() => {
+        badge.style.opacity = '0';
+        badge.style.transform = 'translateX(-50%) translateY(-8px)';
+        setTimeout(() => { badge.style.display = 'none'; }, 350);
+    }, 3500);
+}
 async function sendMessage() {
     const input = document.getElementById('text-input');
     const rawText = input.value.trim();
@@ -550,13 +645,28 @@ async function sendMessage() {
 
     if (!acquireInputLock('text')) return;
 
-    const text = filterBadWords(rawText);
+    // ── Spell / grammar correction ──────────────────────────────────────────
+    let displayText = filterBadWords(rawText);
+    let sendText   = displayText;  // what actually goes to the LLM
 
-    addMessage(text, 'user');
+    try {
+        const corr = await correctText(rawText, 'text');
+        if (corr.changed) {
+            sendText    = filterBadWords(corr.corrected);
+            displayText = sendText;  // show corrected version in chat bubble
+            showCorrectionBadge(corr.corrections, 'text');
+            log(`[Correction] Text: "${rawText}" → "${corr.corrected}"`);
+        }
+    } catch (e) {
+        log(`[Correction] Skipped (error): ${e.message}`);
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
+    addMessage(displayText, 'user');
     input.value = '';
     input.disabled = true;
 
-    const userEmotion = detectEmotionFromText(text);
+    const userEmotion = detectEmotionFromText(sendText);
     if (userEmotion !== "neutral" && avatar && avatar.showEmotion) {
         log(`User text emotion detected: ${userEmotion}`);
         avatar.showEmotion(userEmotion, 0.5, false);
@@ -564,7 +674,7 @@ async function sendMessage() {
 
     // ── Inject interview stage context so LLM knows difficulty level ───────────
     const stageHint = isInterviewMode ? _getInterviewStagePrompt() : '';
-    const finalText = isInterviewMode ? `[${stageHint}] ${text}` : text;
+    const finalText = isInterviewMode ? `[${stageHint}] ${sendText}` : sendText;
 
     try {
         const response = await fetch('/api/chat', {
@@ -940,7 +1050,22 @@ async function sendToServerForTranscription(audioBlob) {
         log("Server response received.");
 
         if (data.input_text && data.input_text.trim()) {
-            const heardText = filterBadWords(data.input_text.trim());
+            let heardText = filterBadWords(data.input_text.trim());
+
+            // ── Grammar Correction on Voice Transcript ──
+            try {
+                const corr = await correctText(data.input_text.trim(), 'voice');
+                if (corr.changed) {
+                    heardText = filterBadWords(corr.corrected);
+                    data.input_text = heardText; // Update data so downstream works correctly
+                    showCorrectionBadge(corr.corrections, 'voice');
+                    log(`[VoiceCorrection] "${corr.original}" → "${corr.corrected}"`);
+                }
+            } catch (e) {
+                log(`[VoiceCorrection] Skipped (error): ${e.message}`);
+            }
+            // ──────────────────────────────────────────
+
             log(`Transcribed: "${heardText}"`);
             addMessage(heardText, 'user');
 

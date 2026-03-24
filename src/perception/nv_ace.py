@@ -4,6 +4,10 @@ import time
 import numpy as np
 import wave
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # NVIDIA ACE Imports
 try:

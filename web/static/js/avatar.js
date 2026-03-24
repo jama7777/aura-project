@@ -142,6 +142,7 @@ export class Avatar {
             this.animations = {};
             this.currentAction = null;
             this.faceMesh = null;
+            this.faceMeshes = []; // IMPORTANT: Clear the list
             this.jawBone = null;
             this.headBone = null;
             this.morphTargetDictionary = {};
@@ -152,11 +153,13 @@ export class Avatar {
             const gltfLoader = new GLTFLoader();
             gltfLoader.load(entry.url, (gltf) => {
                 this._setupLoadedModel(gltf.scene, gltf.animations || [], entry.offsetY);
+                if (this.onAvatarSwitched) this.onAvatarSwitched(key);
             }, undefined, (err) => this.log('Avatar load error: ' + err));
         } else if (entry.ext === 'fbx') {
             const fbxLoader = new FBXLoader();
             fbxLoader.load(entry.url, (fbx) => {
                 this._setupLoadedModel(fbx, fbx.animations || [], entry.offsetY);
+                if (this.onAvatarSwitched) this.onAvatarSwitched(key);
             }, undefined, (err) => this.log('Avatar load error: ' + err));
         }
     }
@@ -177,23 +180,38 @@ export class Avatar {
 
         // Find face mesh + bones
         this.faceMesh = null;
+        this.faceMeshes = []; // Initialize correctly
         this.jawBone = null;
         this.headBone = null;
+        this.morphTargetDictionary = {};
+
         object.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
                 if (child.morphTargetInfluences && child.morphTargetDictionary) {
-                    this.faceMesh = child;
-                    this.morphTargetDictionary = child.morphTargetDictionary;
+                    this.faceMeshes.push(child);
+                    if (!this.faceMesh) {
+                        this.faceMesh = child;
+                        this.morphTargetDictionary = child.morphTargetDictionary;
+                    }
                 }
             }
             if (child.isBone) {
                 const n = child.name.toLowerCase();
-                if (n.includes('jaw')) this.jawBone = child;
-                else if (n.includes('head') && !this.headBone) this.headBone = child;
+                if (n.includes('jaw')) {
+                    this.log(`Found Jaw Bone: ${child.name}`);
+                    this.jawBone = child;
+                } else if (n.includes('head') && !this.headBone) {
+                    this.log(`Found Head Bone: ${child.name}`);
+                    this.headBone = child;
+                }
             }
         });
+
+        if (this.faceMeshes.length > 0) {
+            this.log(`✓ Mesh setup complete! Found ${this.faceMeshes.length} meshes with morph targets.`);
+        }
 
         this.scene.add(object);
         this.model = object;
@@ -547,16 +565,19 @@ export class Avatar {
             object.position.y = -75;
 
             // Find Face Mesh with morph targets and bones
+            this.faceMeshes = [];
             object.traverse((child) => {
                 if (child.isMesh) {
                     child.castShadow = true;
                     child.receiveShadow = true;
                     // Check for Morph Targets (ARKit blendshapes)
                     if (child.morphTargetInfluences && child.morphTargetDictionary) {
-                        this.log(`Found Face Mesh: ${child.name}`);
-                        this.log(`  Morph targets count: ${Object.keys(child.morphTargetDictionary).length}`);
-                        this.faceMesh = child;
-                        this.morphTargetDictionary = child.morphTargetDictionary;
+                        this.log(`Found Face Mesh: ${child.name} with ${Object.keys(child.morphTargetDictionary).length} morphs`);
+                        this.faceMeshes.push(child);
+                        // We use the first found dictionary as the master mapping 
+                        if (!this.morphTargetDictionary) {
+                            this.morphTargetDictionary = child.morphTargetDictionary;
+                        }
                     }
                 }
                 // Check for Bones (jaw, head for fallback)
@@ -573,8 +594,9 @@ export class Avatar {
             });
 
             // Log detection summary
-            if (this.faceMesh) {
-                this.log("✓ Morph targets ready for lip sync!");
+            if (this.faceMeshes.length > 0) {
+                this.log(`✓ Morph targets ready for lip sync! (${this.faceMeshes.length} meshes)`);
+                this.faceMesh = this.faceMeshes[0]; // backward compatibility
             } else {
                 this.log("WARNING: No morph targets found.");
             }
@@ -762,7 +784,8 @@ export class Avatar {
 
         const action = this.animations[name];
         const isIdle = (name === 'idle');
-        const shouldSwitch = isIdle || (this.currentAction !== action);
+        // Always replay if loopOnce — so gesture button clicks always restart the animation
+        const shouldSwitch = isIdle || loopOnce || (this.currentAction !== action);
 
         if (shouldSwitch) {
             if (this.currentAction && this.currentAction !== action) {
@@ -775,17 +798,39 @@ export class Avatar {
             if (loopOnce) {
                 // Play once, then auto-return to idle
                 action.setLoop(THREE.LoopOnce);
+                // Remove any previous finished listener first
                 if (this._finishedListener) {
                     this.mixer.removeEventListener('finished', this._finishedListener);
+                    this._finishedListener = null;
+                }
+                // Clear any previous timeout safety net
+                if (this._finishedTimeout) {
+                    clearTimeout(this._finishedTimeout);
+                    this._finishedTimeout = null;
                 }
                 this._finishedListener = (e) => {
                     if (e.action === action) {
                         this.mixer.removeEventListener('finished', this._finishedListener);
                         this._finishedListener = null;
+                        if (this._finishedTimeout) { clearTimeout(this._finishedTimeout); this._finishedTimeout = null; }
                         this.playAnimation('idle');
                     }
                 };
                 this.mixer.addEventListener('finished', this._finishedListener);
+                // Safety timeout: if finished event is never fired (can happen on some clips),
+                // forcibly return to idle after clip duration + 800ms buffer
+                const clipDuration = action.getClip ? (action.getClip().duration * 1000) : 4000;
+                this._finishedTimeout = setTimeout(() => {
+                    if (this.currentAction === action) {
+                        console.warn(`[Avatar] Timeout fallback for '${name}' → returning to idle`);
+                        if (this._finishedListener) {
+                            this.mixer.removeEventListener('finished', this._finishedListener);
+                            this._finishedListener = null;
+                        }
+                        this._finishedTimeout = null;
+                        this.playAnimation('idle');
+                    }
+                }, clipDuration + 800);
                 // Stop eye idle while emotion animation plays
                 this.stopIdleEyes();
             } else if (isIdle) {
@@ -892,7 +937,7 @@ export class Avatar {
         const actualDuration = emotionDurations[this.currentEmotion] ?? duration;
         if (actualDuration === 0) return; // Already neutral, nothing to do
 
-        const startInfluences = [...this.faceMesh.morphTargetInfluences];
+        const startInfluences = [...this.faceMeshes[0].morphTargetInfluences];
         // Check if there's anything to fade at all (skip if all zeroes)
         const hasExpression = startInfluences.some(v => v > 0.01);
         if (!hasExpression) return;
@@ -916,7 +961,11 @@ export class Avatar {
 
             for (let i = 0; i < startInfluences.length; i++) {
                 if (startInfluences[i] > 0) {
-                    this.faceMesh.morphTargetInfluences[i] = startInfluences[i] * (1 - eased);
+                    this.faceMeshes.forEach(mesh => {
+                        if (mesh.morphTargetInfluences.length > i) {
+                            mesh.morphTargetInfluences[i] = startInfluences[i] * (1 - eased);
+                        }
+                    });
                 }
             }
 
@@ -937,7 +986,7 @@ export class Avatar {
 
         // blendshapes is a dict: { "jawOpen": 0.5, ... }
         let hasMorphs = false;
-        if (this.faceMesh && this.morphTargetDictionary) {
+        if (this.faceMeshes && this.faceMeshes.length > 0 && this.morphTargetDictionary) {
             hasMorphs = true;
             for (const [name, value] of Object.entries(blendshapes)) {
                 // Try to find a matching key in the dictionary
@@ -945,14 +994,24 @@ export class Avatar {
 
                 if (match !== null) {
                     const index = this.morphTargetDictionary[match];
-                    this.faceMesh.morphTargetInfluences[index] = value;
+                    this.faceMeshes.forEach(mesh => {
+                        if (mesh.morphTargetInfluences.length > index) {
+                            mesh.morphTargetInfluences[index] = value;
+                        }
+                    });
                 }
             }
         }
 
         // Fallback: Bone Rotation if no morphs found (or even if found, for extra effect)
-        // If we have a jaw bone, rotate it based on 'jawOpen'
-        const jawValue = blendshapes["jawOpen"] || 0;
+        // If we have a jaw bone, rotate it based on 'jawOpen' (case-insensitive lookup)
+        let jawValue = 0;
+        for (const key in blendshapes) {
+            if (key.toLowerCase() === 'jawopen') {
+                jawValue = blendshapes[key];
+                break;
+            }
+        }
 
         if (this.jawBone) {
             // Typically jaw rotates around X axis. Value 0..1
@@ -1241,7 +1300,11 @@ export class Avatar {
             const match = this.findMorphTarget(name);
             if (match !== null) {
                 const index = this.morphTargetDictionary[match];
-                this.faceMesh.morphTargetInfluences[index] = value * intensity;
+                this.faceMeshes.forEach(mesh => {
+                    if (mesh.morphTargetInfluences.length > index) {
+                        mesh.morphTargetInfluences[index] = value * intensity;
+                    }
+                });
             }
         }
 
@@ -1256,9 +1319,9 @@ export class Avatar {
 
     // Animate transition between emotions
     transitionToEmotion(targetEmotion, duration = 500, triggerAnimation = true) {
-        if (!this.faceMesh) return;
+        if (!this.faceMeshes || this.faceMeshes.length === 0) return;
 
-        const startInfluences = [...this.faceMesh.morphTargetInfluences];
+        const startInfluences = [...this.faceMeshes[0].morphTargetInfluences];
         const targetBlendshapes = {};
         this.applyEmotionModifiers(targetEmotion, targetBlendshapes);
 
@@ -1281,8 +1344,12 @@ export class Avatar {
             const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
             for (let i = 0; i < startInfluences.length; i++) {
-                this.faceMesh.morphTargetInfluences[i] =
-                    startInfluences[i] + (targetInfluences[i] - startInfluences[i]) * eased;
+                const newValue = startInfluences[i] + (targetInfluences[i] - startInfluences[i]) * eased;
+                this.faceMeshes.forEach(mesh => {
+                    if (mesh.morphTargetInfluences.length > i) {
+                        mesh.morphTargetInfluences[i] = newValue;
+                    }
+                });
             }
 
             if (t < 1) {
