@@ -193,6 +193,8 @@ export class Avatar {
                     this.faceMeshes.push(child);
                     if (!this.faceMesh) {
                         this.faceMesh = child;
+                    }
+                    if (Object.keys(this.morphTargetDictionary).length === 0) {
                         this.morphTargetDictionary = child.morphTargetDictionary;
                     }
                 }
@@ -492,7 +494,9 @@ export class Avatar {
                     if (child.morphTargetInfluences && child.morphTargetDictionary) {
                         this.log(`Found Face Mesh: ${child.name}`);
                         this.faceMesh = child;
-                        this.morphTargetDictionary = child.morphTargetDictionary;
+                        if (Object.keys(this.morphTargetDictionary).length === 0) {
+                            this.morphTargetDictionary = child.morphTargetDictionary;
+                        }
                     }
                 }
             });
@@ -574,8 +578,8 @@ export class Avatar {
                     if (child.morphTargetInfluences && child.morphTargetDictionary) {
                         this.log(`Found Face Mesh: ${child.name} with ${Object.keys(child.morphTargetDictionary).length} morphs`);
                         this.faceMeshes.push(child);
-                        // We use the first found dictionary as the master mapping 
-                        if (!this.morphTargetDictionary) {
+                        // Populate the master dictionary from the FIRST mesh found
+                        if (Object.keys(this.morphTargetDictionary).length === 0) {
                             this.morphTargetDictionary = child.morphTargetDictionary;
                         }
                     }
@@ -1374,9 +1378,15 @@ export class Avatar {
     }
 
     resetFace() {
-        if (!this.faceMesh) return;
-        // Fast snap to neutral (used only in edge cases — normal flow uses gradualEmotionalRecovery)
-        this.transitionToEmotion("neutral", 300, false);
+        if (!this.faceMeshes || this.faceMeshes.length === 0) return;
+        // Zero out all morph targets immediately for clean reset after talking
+        this.faceMeshes.forEach(mesh => {
+            if (mesh.morphTargetInfluences) {
+                for (let i = 0; i < mesh.morphTargetInfluences.length; i++) {
+                    mesh.morphTargetInfluences[i] = 0;
+                }
+            }
+        });
     }
 
     /**

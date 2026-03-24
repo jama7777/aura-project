@@ -1,4 +1,4 @@
-import { Avatar } from './avatar.js?v=13';
+import { Avatar } from './avatar.js?v=14';
 import { GestureHandler } from './gesture.js';
 import { FaceEmotionDetector } from './face_emotion.js';
 
