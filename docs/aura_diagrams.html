@@ -993,6 +993,74 @@ flowchart TD
   </table>
 </div>
 
+<!-- ══════════════════════════════════════════ -->
+<!-- 14. AURA MODES: DEFAULT VS INTERVIEW TAKER -->
+<!-- ══════════════════════════════════════════ -->
+<div class="section">
+  <h2>14. AURA Modes Comparison: Default vs Interview Taker <span class="tag">ARCHITECTURE</span></h2>
+  <p class="desc">
+    This diagram explicitly details the structural differences and unification points between the 
+    <strong>AURA Default Mode</strong> and the new <strong>Interview Taker Mode</strong>.
+  </p>
+  <div class="mermaid">
+flowchart TD
+    classDef defaultMode fill:#6c5ce7,stroke:#fff,stroke-width:2px,color:#fff
+    classDef interviewMode fill:#d63031,stroke:#fff,stroke-width:2px,color:#fff
+    classDef input fill:#00b894,stroke:#fff,stroke-width:2px,color:#fff
+    classDef brain fill:#e17055,stroke:#fff,stroke-width:2px,color:#fff
+    classDef output fill:#0984e3,stroke:#fff,stroke-width:2px,color:#fff
+
+    User((User)):::input
+    
+    User -- "Casual Chat / Gestures" --> D_Mode[AURA Default Mode]:::defaultMode
+    User -- "Uploads Resume (PDF)" --> I_Mode[Interview Taker Mode]:::interviewMode
+
+    subgraph Perception Layer
+        UI("Frontend UI (Camera/Mic)"):::input
+        Whisper("Speech-to-Text (Whisper Base)"):::input
+        Emotion("Voice/Face Emotion Detection (SUPERB)"):::input
+    end
+
+    D_Mode --> UI
+    I_Mode --> PyPDF["PDF Extraction Engine"]:::input
+    PyPDF --> UI
+    
+    UI --> Whisper
+    UI --> Emotion
+    
+    subgraph Cognitive Core (Brain)
+        Brain{"AURA Brain (Context Router)"}:::brain
+        Memory[("ChromaDB Context Memory")]:::brain
+        NIM("NVIDIA NIM (LLaMA-3 70B)"):::brain
+        Gemini("Google Gemini 2.0 (Fallback)"):::brain
+        
+        Brain <--> Memory
+        Brain <--> NIM
+        NIM -. "Fallback on Error" .-> Gemini
+    end
+
+    Whisper --> Brain
+    Emotion --> Brain
+    PyPDF --> Brain
+    
+    subgraph Action & Synthesis
+        TTS("Text-to-Speech Engine"):::output
+        ACE("NVIDIA Audio2Face (Lip Sync)"):::output
+        Gesture("Emotion-to-Gesture Logic"):::output
+    end
+
+    Brain --> TTS
+    Brain --> Gesture
+    TTS --> ACE
+    
+    Avatar["3D Avatar Interface"]:::output
+    
+    ACE -- "Blendshapes" --> Avatar
+    Gesture -- "Body Animations" --> Avatar
+    TTS -- "Audio Stream" --> Avatar
+  </div>
+</div>
+
 <footer>
   AURA Architecture &amp; UML Diagrams &nbsp;·&nbsp; Updated March 2026 &nbsp;·&nbsp; Branch: <strong>main</strong> &nbsp;·&nbsp; Memory: ChromaDB n_results=15 + Dedup Filter
 </footer>
