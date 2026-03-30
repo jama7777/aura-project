@@ -28,17 +28,10 @@ export class Avatar {
         this._eyeLookTimeout = null;
         // Emotional recovery
         this._recoveryId = 0;
-        this.isInterviewMode = false;
 
-        // ── Multi-avatar catalog ─────────────────────────────────────────────
-        // Each entry: { name, url, ext, credit }
-        // Users can add more GLB/FBX models to assets/models/ and register here.
-        this.AVATAR_CATALOG = [
-            { key: 'aura',    name: 'AURA (Default)',   url: '/assets/models/rpm_avatar.glb',    ext: 'glb',  offsetY: -75 },
-            { key: 'casual',  name: 'Casual Avatar',    url: '/assets/models/rpm_avatar.glb',    ext: 'glb',  offsetY: -75 },   // placeholder — swap with real model
-            { key: 'formal',  name: 'Formal Interviewer', url: '/assets/models/rpm_avatar.glb', ext: 'glb',  offsetY: -75 },   // placeholder
-        ];
-        this.currentAvatarKey = 'aura';
+
+        // Dynamic Idle configuration
+        this.defaultIdleAnimation = 'idle';
     }
 
     log(msg) {
@@ -54,7 +47,7 @@ export class Avatar {
         // Scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x020205);
-        
+
         // Dynamic 3D Environment Setup
         this.createStarfield();
         this.createPlanet();
@@ -102,9 +95,6 @@ export class Avatar {
         this.controls.enablePan = false;    // Locked
         this.controls.update();
 
-        // Create Desk/Table for Interview Mode
-        this.createInterviewDesk();
-
         // Load Model
         this.loadModel();
 
@@ -121,50 +111,7 @@ export class Avatar {
         this.animate();
     }
 
-    // ─── Multi-Avatar Switcher ────────────────────────────────────────────────
-    /**
-     * Load a new avatar by its catalog key.
-     * Existing animations are re-attached to the new model's mixer.
-     */
-    switchAvatar(key) {
-        const entry = this.AVATAR_CATALOG.find(a => a.key === key);
-        if (!entry) { this.log(`Unknown avatar key: ${key}`); return; }
-
-        this.log(`Switching avatar → ${entry.name}`);
-        this.currentAvatarKey = key;
-
-        // Remove old model
-        if (this.model) {
-            this.scene.remove(this.model);
-            if (this.mixer) this.mixer.stopAllAction();
-            this.model = null;
-            this.mixer = null;
-            this.animations = {};
-            this.currentAction = null;
-            this.faceMesh = null;
-            this.faceMeshes = []; // IMPORTANT: Clear the list
-            this.jawBone = null;
-            this.headBone = null;
-            this.morphTargetDictionary = {};
-            this.stopIdleEyes();
-        }
-
-        if (entry.ext === 'glb') {
-            const gltfLoader = new GLTFLoader();
-            gltfLoader.load(entry.url, (gltf) => {
-                this._setupLoadedModel(gltf.scene, gltf.animations || [], entry.offsetY);
-                if (this.onAvatarSwitched) this.onAvatarSwitched(key);
-            }, undefined, (err) => this.log('Avatar load error: ' + err));
-        } else if (entry.ext === 'fbx') {
-            const fbxLoader = new FBXLoader();
-            fbxLoader.load(entry.url, (fbx) => {
-                this._setupLoadedModel(fbx, fbx.animations || [], entry.offsetY);
-                if (this.onAvatarSwitched) this.onAvatarSwitched(key);
-            }, undefined, (err) => this.log('Avatar load error: ' + err));
-        }
-    }
-
-    /** Common post-load setup shared by initial load and switchAvatar */
+    /** Common post-load setup shared by initial load */
     _setupLoadedModel(object, animations, offsetY = -75) {
         this.mixer = new THREE.AnimationMixer(object);
 
@@ -214,218 +161,30 @@ export class Avatar {
         if (this.faceMeshes.length > 0) {
             this.log(`✓ Mesh setup complete! Found ${this.faceMeshes.length} meshes with morph targets.`);
         }
-
         this.scene.add(object);
         this.model = object;
 
         // Load animations
-        if (animations.length > 0) {
+        if (animations && animations.length > 0) {
             animations.forEach(clip => {
                 this.animations[clip.name] = this.mixer.clipAction(clip);
             });
         }
         this.loadFBXAnimations();
 
-        // If in interview mode, re-apply the sitting camera/desk immediately
-        if (this.isInterviewMode) {
-            setTimeout(() => {
-                if (this.animations['interview_idle']) this.playAnimation('interview_idle');
-            }, 500);
-        }
-
-        this.log(`✅ Avatar switched to: ${this.currentAvatarKey}`);
-        // Fire external callback so UI can update avatar selector
-        if (this.onAvatarSwitched) this.onAvatarSwitched(this.currentAvatarKey);
+        this.log(`✅ Avatar model loaded.`);
     }
 
-    createInterviewDesk() {
-        // ── Realistic interview desk ─────────────────────────────────────────
-        // Coordinate reference:
-        //   Avatar feet  = y = 0
-        //   Avatar is ~160 units tall (head at y ≈ 160)
-        //   Real desk height ≈ y = 95  (just below chest when sitting)
-        // Strategy: place desk top at y=95, legs hang down to ground.
-        // The desk is pushed slightly in front of the avatar (z = -10)
-        // so the avatar appears to be seated BEHIND it from the camera.
-        const deskGroup = new THREE.Group();
 
-        const DESK_TOP_Y = 0;  // local origin — we'll position the group at y=95
 
-        // ── Table top ────────────────────────────────────────────────────────
-        // Wide (160), shallow depth (50), thin (4)
-        const topGeo = new THREE.BoxGeometry(160, 4, 50);
-        const topMat = new THREE.MeshPhongMaterial({
-            color: 0x3b2010,   // dark walnut
-            specular: 0x221108,
-            shininess: 45
-        });
-        const topMesh = new THREE.Mesh(topGeo, topMat);
-        topMesh.position.y = DESK_TOP_Y;
-        topMesh.receiveShadow = true;
-        topMesh.castShadow = true;
-        deskGroup.add(topMesh);
-
-        // Front edge lip (decorative strip)
-        const lipGeo = new THREE.BoxGeometry(160, 2, 1);
-        const lipMat = new THREE.MeshPhongMaterial({ color: 0x1a0e06 });
-        const lipFront = new THREE.Mesh(lipGeo, lipMat);
-        lipFront.position.set(0, DESK_TOP_Y - 2, 25.5);
-        deskGroup.add(lipFront);
-
-        // ── Legs: four chunky square legs ────────────────────────────────────
-        // Each leg goes from just below the desk top down to y=0 (ground)
-        const LEG_HEIGHT = 72;   // matches deskGroup.position.y below
-        const legGeo = new THREE.BoxGeometry(5, LEG_HEIGHT, 5);
-        const legMat = new THREE.MeshPhongMaterial({
-            color: 0x222222,
-            specular: 0x555555,
-            shininess: 40
-        });
-        // Offsets from desk centre (half-width=75, half-depth=22)
-        const legPositions = [
-            [-72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2, -22],
-            [ 72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2, -22],
-            [-72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2,  22],
-            [ 72, DESK_TOP_Y - 2 - LEG_HEIGHT / 2,  22]
-        ];
-        legPositions.forEach(([x, y, z]) => {
-            const leg = new THREE.Mesh(legGeo, legMat);
-            leg.position.set(x, y, z);
-            leg.castShadow = true;
-            leg.receiveShadow = true;
-            deskGroup.add(leg);
-        });
-
-        // ── Desk accent panel between front legs ─────────────────────────────
-        const panelGeo = new THREE.BoxGeometry(139, 30, 1);
-        const panelMat = new THREE.MeshPhongMaterial({ color: 0x2a1808 });
-        const panel = new THREE.Mesh(panelGeo, panelMat);
-        panel.position.set(0, DESK_TOP_Y - 2 - 15, 22.5);
-        deskGroup.add(panel);
-
-        // ── Decorative items on the desk ─────────────────────────────────────
-
-        // Laptop base
-        const laptopGeo = new THREE.BoxGeometry(28, 1.5, 20);
-        const laptopMat = new THREE.MeshPhongMaterial({ color: 0x2c2c2e, specular: 0x666666, shininess: 70 });
-        const laptop = new THREE.Mesh(laptopGeo, laptopMat);
-        laptop.position.set(18, DESK_TOP_Y + 2.75, -8);
-        deskGroup.add(laptop);
-
-        // Laptop screen (slightly angled back toward avatar)
-        const screenGeo = new THREE.BoxGeometry(28, 18, 0.8);
-        const screenMat = new THREE.MeshPhongMaterial({ color: 0x101020, emissive: 0x0a0a1a, shininess: 120 });
-        const screen = new THREE.Mesh(screenGeo, screenMat);
-        screen.position.set(18, DESK_TOP_Y + 12, -17.5);
-        screen.rotation.x = THREE.MathUtils.degToRad(20);
-        deskGroup.add(screen);
-
-        // Screen glow (blue tint plane facing camera)
-        const glowGeo = new THREE.PlaneGeometry(25, 15);
-        const glowMat = new THREE.MeshBasicMaterial({ color: 0x1a3a6a, transparent: true, opacity: 0.6 });
-        const glow = new THREE.Mesh(glowGeo, glowMat);
-        glow.position.set(18, DESK_TOP_Y + 12, -17.2);
-        glow.rotation.x = THREE.MathUtils.degToRad(20);
-        deskGroup.add(glow);
-
-        // Notepad
-        const padGeo = new THREE.BoxGeometry(16, 0.5, 22);
-        const padMat = new THREE.MeshPhongMaterial({ color: 0xfff8e7 });
-        const pad = new THREE.Mesh(padGeo, padMat);
-        pad.position.set(-30, DESK_TOP_Y + 2.25, -5);
-        deskGroup.add(pad);
-
-        // Pen on notepad
-        const penGeo = new THREE.CylinderGeometry(0.5, 0.5, 16);
-        const penMat = new THREE.MeshPhongMaterial({ color: 0x1a1a80 });
-        const pen = new THREE.Mesh(penGeo, penMat);
-        pen.rotation.z = Math.PI / 2;
-        pen.position.set(-30, DESK_TOP_Y + 3.5, -12);
-        deskGroup.add(pen);
-
-        // Small coffee cup (cylinder)
-        const cupGeo = new THREE.CylinderGeometry(3.5, 2.8, 8, 16);
-        const cupMat = new THREE.MeshPhongMaterial({ color: 0xf5f5f5 });
-        const cup = new THREE.Mesh(cupGeo, cupMat);
-        cup.position.set(-55, DESK_TOP_Y + 6, 5);
-        deskGroup.add(cup);
-        // Coffee (dark liquid top)
-        const coffeeGeo = new THREE.CylinderGeometry(3.3, 3.3, 0.5, 16);
-        const coffeeMat = new THREE.MeshPhongMaterial({ color: 0x3a1f0d });
-        const coffee = new THREE.Mesh(coffeeGeo, coffeeMat);
-        coffee.position.set(-55, DESK_TOP_Y + 10, 5);
-        deskGroup.add(coffee);
-
-        // ── Position group: desk surface at y=72 (waist level when sitting) ──
-        // Avatar feet = y=0, avatar ~150 tall → waist ≈ y=60-75 when seated
-        // z = -10 puts desk in FRONT of avatar so she appears behind it
-        deskGroup.position.set(0, 72, -10);
-
-        deskGroup.visible = false;
-        this.scene.add(deskGroup);
-        this.interviewDesk = deskGroup;
-    }
-
-    setInterviewMode(active) {
-        this.log(`Setting Interview Mode: ${active}`);
-        this.isInterviewMode = active;
-
-        if (active) {
-            // ── Show the desk ──────────────────────────────────────────────
-            if (this.interviewDesk) this.interviewDesk.visible = true;
-
-            // ── Scene: remove grid / darken background for professional look ─
-            this.scene.background = new THREE.Color(0x0d0d14);  // dark office blue
-            this.scene.fog = new THREE.Fog(0x0d0d14, 300, 900);
-
-            // ── Camera: looking at AURA's face from across the desk ─────────
-            // Desk top now at y=72 (waist). Avatar head is around y=120-130.
-            // Camera at y=120, z=240 gives a natural over-the-desk eye-level view.
-            this.camera.position.set(0, 120, 240);
-            if (this.controls) {
-                this.controls.target.set(0, 110, 0);   // aim at AURA's face
-                this.controls.minDistance = 80;
-                this.controls.maxDistance = 350;
-                this.controls.update();
+    setIdleAnimation(animName) {
+        if (this.animations[animName]) {
+            this.defaultIdleAnimation = animName;
+            if (!this.isPlayingEmotionAnimation) {
+                this.playAnimation(animName);
             }
-
-            // ── Animation: sitting pose ────────────────────────────────────
-            if (this.animations['interview_idle']) {
-                this.playAnimation('interview_idle');
-            }
-
-            // ── Add a warm desk lamp light ─────────────────────────────────
-            if (!this._deskLamp) {
-                const deskLight = new THREE.PointLight(0xfff5e0, 2.0, 250);
-                deskLight.position.set(-40, 150, 30);
-                this.scene.add(deskLight);
-                this._deskLamp = deskLight;
-            }
-
         } else {
-            // ── Hide desk ──────────────────────────────────────────────────
-            if (this.interviewDesk) this.interviewDesk.visible = false;
-
-            // ── Restore scene ──────────────────────────────────────────────
-            this.scene.background = new THREE.Color(0x111111);
-            this.scene.fog = new THREE.Fog(0x111111, 200, 1000);
-
-            if (this._deskLamp) {
-                this.scene.remove(this._deskLamp);
-                this._deskLamp = null;
-            }
-
-            // ── Restore default camera ─────────────────────────────────────
-            this.camera.position.set(0, 150, 400);
-            if (this.controls) {
-                this.controls.target.set(0, 100, 0);
-                this.controls.minDistance = 0;
-                this.controls.maxDistance = Infinity;
-                this.controls.update();
-            }
-
-            // ── Switch back to standing idle ───────────────────────────────
-            this.playAnimation('idle');
+            this.log(`Attempted to set idle to unknown animation: ${animName}`);
         }
     }
 
@@ -507,7 +266,7 @@ export class Avatar {
                     this.cleanAnimationClips(clip);
                     this.animations[clip.name] = this.mixer.clipAction(clip);
                 });
-                this.playAnimation('idle') || (animations[0] && this.playAnimation(animations[0].name));
+                this.playAnimation(this.defaultIdleAnimation) || (animations[0] && this.playAnimation(animations[0].name));
             }
         };
 
@@ -672,7 +431,7 @@ export class Avatar {
     createStarfield() {
         const starsGeometry = new THREE.BufferGeometry();
         const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
-        
+
         const starsVertices = [];
         for (let i = 0; i < 3000; i++) {
             const x = THREE.MathUtils.randFloatSpread(4000);
@@ -681,7 +440,7 @@ export class Avatar {
             if (Math.abs(x) < 500 && Math.abs(y) < 500 && Math.abs(z) < 500) continue;
             starsVertices.push(x, y, z);
         }
-        
+
         starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
         this.starField = new THREE.Points(starsGeometry, starsMaterial);
         this.scene.add(this.starField);
@@ -689,18 +448,18 @@ export class Avatar {
 
     createPlanet() {
         const planetGeom = new THREE.SphereGeometry(1500, 64, 64);
-        const planetMat = new THREE.MeshPhongMaterial({ 
-            color: 0x1a2b4c, 
+        const planetMat = new THREE.MeshPhongMaterial({
+            color: 0x1a2b4c,
             emissive: 0x051020,
             specular: 0x555555,
             shininess: 20
         });
-        
+
         this.planet = new THREE.Mesh(planetGeom, planetMat);
-        this.planet.position.set(0, -1575, 0); 
+        this.planet.position.set(0, -1575, 0);
         this.planet.receiveShadow = true;
         this.scene.add(this.planet);
-        
+
         const atmosGeom = new THREE.SphereGeometry(1520, 64, 64);
         const atmosMat = new THREE.MeshBasicMaterial({
             color: 0x4488ff,
@@ -714,26 +473,50 @@ export class Avatar {
     }
 
     loadFBXAnimations() {
-        // Map the user's downloaded Mixamo animations to our emotion system names
+        // ── Mixamo animations (high-quality rigged clips) ────────────────────
         const animationMap = {
-            'idle': 'Catwalk Idle To Twist R.fbx',  // Cat walk idle
-            'interview_idle': 'Sitting_interview_position@1.fbx', // Interview sitting
+            'idle': 'Catwalk Idle To Twist R.fbx',
             'happy': 'Sitting Laughing.fbx',
             'dance': 'Hip Hop Dancing.fbx',
+            'dance2': 'Hip Hop Dancing-2.fbx',
             'clap': 'Clapping.fbx',
             'jump': 'Jumping Down.fbx',
             'sad': 'Defeated.fbx',
             'pray': 'Praying.fbx',
             'crouch': 'Crouch To Stand.fbx',
-            'hug': 'Sitting Laughing.fbx',  // Reuse happy for hug
-            'angry': 'Defeated.fbx'  // Reuse defeated for angry (tense posture)
+            'hug': 'Sitting Laughing.fbx',
+            'angry': 'Defeated.fbx',
+            'walk_turn': 'Catwalk Walk Turn 180 Tight.fbx',
         };
 
         const fbxLoader = new FBXLoader();
         let loadedCount = 0;
+        let attemptCount = 0;
         const totalAnimations = Object.keys(animationMap).length;
 
         this.log(`Loading ${totalAnimations} FBX animations...`);
+        
+        const checkStartupState = () => {
+            if (attemptCount >= totalAnimations) {
+                this.log(`🎉 Animations processed: Load=${loadedCount}, Fail=${attemptCount - loadedCount}. Done!`);
+                this.log(`Available: ${Object.keys(this.animations).join(', ')}`);
+
+                // Start with idle animation
+                if (this.animations[this.defaultIdleAnimation]) {
+                    this.playAnimation(this.defaultIdleAnimation);
+                } else if (this.animations['idle']) {
+                    this.defaultIdleAnimation = 'idle';
+                    this.playAnimation('idle');
+                } else {
+                    // Fallback to whatever first animation loaded, if nothing else exists
+                    const fallback = Object.keys(this.animations)[0];
+                    if (fallback) {
+                        this.defaultIdleAnimation = fallback;
+                        this.playAnimation(fallback);
+                    }
+                }
+            }
+        };
 
         Object.entries(animationMap).forEach(([animName, fileName]) => {
             const filePath = `/assets/animations/${fileName}`;
@@ -755,24 +538,16 @@ export class Avatar {
                     } else {
                         this.log(`⚠️ No animation data in: ${fileName}`);
                     }
-
-                    // Check if all animations loaded
-                    if (loadedCount === totalAnimations) {
-                        this.log(`🎉 All ${loadedCount} animations loaded and ready!`);
-                        this.log(`Available: ${Object.keys(this.animations).join(', ')}`);
-
-                        // Start with idle animation
-                        if (this.animations['idle']) {
-                            this.playAnimation('idle');
-                        }
-                    }
+                    attemptCount++;
+                    checkStartupState();
                 },
                 (progress) => {
                     // Progress callback
                 },
                 (error) => {
-                    console.error(`Error loading ${fileName}:`, error);
-                    this.log(`❌ Error: ${animName} - ${error.message}`);
+                    this.log(`❌ Error loading: ${animName} from ${fileName}`);
+                    attemptCount++;
+                    checkStartupState();
                 }
             );
         });
@@ -787,92 +562,133 @@ export class Avatar {
         }
 
         const action = this.animations[name];
-        const isIdle = (name === 'idle');
-        // Always replay if loopOnce — so gesture button clicks always restart the animation
-        const shouldSwitch = isIdle || loopOnce || (this.currentAction !== action);
+        
+        // Robust check for "currently performing" state
+        const isActuallyRunning = this.currentAction && 
+                                  this.currentAction.isRunning() && 
+                                  this.currentAction.getEffectiveWeight() > 0.5;
+        
+        const shouldSwitch = loopOnce || (this.currentAction !== action) || !isActuallyRunning;
 
         if (shouldSwitch) {
             if (this.currentAction && this.currentAction !== action) {
-                this.currentAction.fadeOut(0.5);
+                this.currentAction.fadeOut(0.3);
             }
 
-            action.reset().fadeIn(0.3);
-            action.clampWhenFinished = loopOnce;
+            // ── MANAGE LISTENERS ──
+            if (this._animationFinishHandler) {
+                this.mixer.removeEventListener('finished', this._animationFinishHandler);
+                this._animationFinishHandler = null;
+            }
+            if (this._finishedTimeout) {
+                clearTimeout(this._finishedTimeout);
+                this._finishedTimeout = null;
+            }
 
             if (loopOnce) {
-                // Play once, then auto-return to idle
                 action.setLoop(THREE.LoopOnce);
-                // Remove any previous finished listener first
-                if (this._finishedListener) {
-                    this.mixer.removeEventListener('finished', this._finishedListener);
-                    this._finishedListener = null;
-                }
-                // Clear any previous timeout safety net
-                if (this._finishedTimeout) {
-                    clearTimeout(this._finishedTimeout);
-                    this._finishedTimeout = null;
-                }
-                this._finishedListener = (e) => {
+                action.clampWhenFinished = true;
+                
+                this._animationFinishHandler = (e) => {
                     if (e.action === action) {
-                        this.mixer.removeEventListener('finished', this._finishedListener);
-                        this._finishedListener = null;
-                        if (this._finishedTimeout) { clearTimeout(this._finishedTimeout); this._finishedTimeout = null; }
-                        this.playAnimation('idle');
+                        this.mixer.removeEventListener('finished', this._animationFinishHandler);
+                        this._animationFinishHandler = null;
+                        this.log(`Animation finished: ${name}`);
+                        
+                        this.isPlayingEmotionAnimation = false;
+                        if (this._finishedTimeout) {
+                            clearTimeout(this._finishedTimeout);
+                            this._finishedTimeout = null;
+                        }
+                        
+                        this.playAnimation(this.defaultIdleAnimation);
+                        this.processEmotionQueue();
                     }
                 };
-                this.mixer.addEventListener('finished', this._finishedListener);
-                // Safety timeout: if finished event is never fired (can happen on some clips),
-                // forcibly return to idle after clip duration + 800ms buffer
-                const clipDuration = action.getClip ? (action.getClip().duration * 1000) : 4000;
+                this.mixer.addEventListener('finished', this._animationFinishHandler);
+
+                // Safety timeout (12s)
                 this._finishedTimeout = setTimeout(() => {
-                    if (this.currentAction === action) {
-                        console.warn(`[Avatar] Timeout fallback for '${name}' → returning to idle`);
-                        if (this._finishedListener) {
-                            this.mixer.removeEventListener('finished', this._finishedListener);
-                            this._finishedListener = null;
-                        }
-                        this._finishedTimeout = null;
-                        this.playAnimation('idle');
+                    if (this.isPlayingEmotionAnimation) {
+                        this.log(`ANIMATION TIMEOUT: Force reset for ${name}`);
+                        this.isPlayingEmotionAnimation = false;
+                        this.playAnimation(this.defaultIdleAnimation);
                     }
-                }, clipDuration + 800);
-                // Stop eye idle while emotion animation plays
+                }, 12000);
+
+                this.isPlayingEmotionAnimation = true;
                 this.stopIdleEyes();
-            } else if (isIdle) {
-                // Idle ping-pongs: front → twist → front → ...
+            } else if (name === this.defaultIdleAnimation || name === 'idle') {
                 action.setLoop(THREE.LoopPingPong);
                 action.clampWhenFinished = false;
-                // Start eye idle system as soon as idle kicks in
-                setTimeout(() => this.startIdleEyes(), 300);
-            } else if (name === 'interview_idle') {
-                action.setLoop(THREE.LoopRepeat);
-                action.clampWhenFinished = false;
+                this.isPlayingEmotionAnimation = false;
                 setTimeout(() => this.startIdleEyes(), 300);
             } else {
                 action.setLoop(THREE.LoopRepeat);
+                this.isPlayingEmotionAnimation = false;
                 this.stopIdleEyes();
             }
 
+            if (!loopOnce) {
+                this.defaultIdleAnimation = name;
+            }
+
+            action.reset().fadeIn(0.3);
             action.play();
             this.currentAction = action;
-        }
-    }
 
+            this._showAnimBadge(name);
+        }   // end if(shouldSwitch)
+    }   // end playAnimation()
+
+    /**
+     * Shows a small floating badge so you can SEE which animation is playing.
+     * Teal  = CMU real mocap   |   Purple = Mixamo
+     */
+    _showAnimBadge(name) {
+        let badge = document.getElementById('aura-anim-badge');
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.id = 'aura-anim-badge';
+            badge.style.cssText = [
+                'position:fixed', 'bottom:12px', 'right:14px',
+                'background:rgba(15,15,30,0.88)', 'color:#a29bfe',
+                'font-size:11px', 'font-weight:700', 'letter-spacing:0.5px',
+                'padding:5px 14px', 'border-radius:20px', 'z-index:9999',
+                'pointer-events:none', 'backdrop-filter:blur(6px)',
+                'border:1px solid rgba(162,155,254,0.35)',
+                'box-shadow:0 2px 12px rgba(108,92,231,0.4)',
+                'transition:opacity 0.4s ease', 'font-family:monospace'
+            ].join(';');
+            document.body.appendChild(badge);
+        }
+        const label = name + ' | 🎭 Mixamo';
+        badge.textContent = '▶ ' + label;
+        badge.style.color = '#a29bfe';
+        badge.style.opacity = '1';
+        clearTimeout(badge._t);
+        badge._t = setTimeout(() => { badge.style.opacity = '0.35'; }, 3500);
+    }
 
     playIntroSequence() {
         this.log("Playing Intro Sequence...");
         const sequence = ['dance', 'happy', 'sad', 'jump', 'pray', 'clap'];
         this.playSequence(sequence, () => {
             this.log("Intro complete. Switching to Idle.");
-            this.playAnimation('idle');
+            this.playAnimation(this.defaultIdleAnimation);
         });
     }
 
     playSequence(sequence, onComplete) {
         let index = 0;
+        this.isPlayingEmotionAnimation = true;
+        this.stopIdleEyes();
 
         const playNext = () => {
             if (index >= sequence.length) {
+                this.isPlayingEmotionAnimation = false;
                 if (onComplete) onComplete();
+                if (this.processEmotionQueue) this.processEmotionQueue();
                 return;
             }
 
@@ -1155,10 +971,10 @@ export class Avatar {
     }
 
     applyEmotionModifiers(emotion, blendshapes) {
-        // Strong boost factors for visible emotion expressions
-        const STRONG = 0.7;
-        const MEDIUM = 0.5;
-        const LIGHT = 0.3;
+        // Reduced factors to prevent over-exaggerated "mouth spread" and uncanny valley effects.
+        const STRONG = 0.45;
+        const MEDIUM = 0.3;
+        const LIGHT = 0.15;
 
         // Emotion expressions - these are added ON TOP of lip sync
         switch (emotion.toLowerCase()) {
@@ -1176,11 +992,10 @@ export class Avatar {
                 blendshapes["cheekSquintRight"] = (blendshapes["cheekSquintRight"] || 0) + LIGHT;
                 blendshapes["browInnerUp"] = (blendshapes["browInnerUp"] || 0) + LIGHT;
                 break;
-
+            // ... (rest of cases remain same but use the new constants) ...
             case "angry":
             case "anger":
             case "frustrated":
-                // Furrowed brows, tight lips, intense eyes
                 blendshapes["browDownLeft"] = (blendshapes["browDownLeft"] || 0) + STRONG;
                 blendshapes["browDownRight"] = (blendshapes["browDownRight"] || 0) + STRONG;
                 blendshapes["eyeSquintLeft"] = (blendshapes["eyeSquintLeft"] || 0) + MEDIUM;
@@ -1196,14 +1011,12 @@ export class Avatar {
             case "sadness":
             case "depressed":
             case "upset":
-                // Droopy eyes, frown, inner brows up
                 blendshapes["browInnerUp"] = (blendshapes["browInnerUp"] || 0) + STRONG;
                 blendshapes["mouthFrownLeft"] = (blendshapes["mouthFrownLeft"] || 0) + MEDIUM;
                 blendshapes["mouthFrownRight"] = (blendshapes["mouthFrownRight"] || 0) + MEDIUM;
                 blendshapes["eyeBlinkLeft"] = (blendshapes["eyeBlinkLeft"] || 0) + LIGHT;
                 blendshapes["eyeBlinkRight"] = (blendshapes["eyeBlinkRight"] || 0) + LIGHT;
                 blendshapes["mouthPucker"] = (blendshapes["mouthPucker"] || 0) + LIGHT;
-                // Reduce other expressions for subdued look
                 for (const key in blendshapes) {
                     if (!key.includes("brow") && !key.includes("Frown") && !key.includes("Blink")) {
                         blendshapes[key] *= 0.7;
@@ -1215,7 +1028,6 @@ export class Avatar {
             case "surprise":
             case "shocked":
             case "amazed":
-                // Wide eyes, raised brows, open mouth
                 blendshapes["eyeWideLeft"] = (blendshapes["eyeWideLeft"] || 0) + STRONG;
                 blendshapes["eyeWideRight"] = (blendshapes["eyeWideRight"] || 0) + STRONG;
                 blendshapes["browInnerUp"] = (blendshapes["browInnerUp"] || 0) + STRONG;
@@ -1229,7 +1041,6 @@ export class Avatar {
             case "scared":
             case "afraid":
             case "worried":
-                // Wide eyes, raised inner brows, tense mouth
                 blendshapes["eyeWideLeft"] = (blendshapes["eyeWideLeft"] || 0) + STRONG;
                 blendshapes["eyeWideRight"] = (blendshapes["eyeWideRight"] || 0) + STRONG;
                 blendshapes["browInnerUp"] = (blendshapes["browInnerUp"] || 0) + STRONG;
@@ -1240,7 +1051,6 @@ export class Avatar {
 
             case "disgust":
             case "disgusted":
-                // Wrinkled nose, raised upper lip
                 blendshapes["noseSneerLeft"] = (blendshapes["noseSneerLeft"] || 0) + STRONG;
                 blendshapes["noseSneerRight"] = (blendshapes["noseSneerRight"] || 0) + STRONG;
                 blendshapes["mouthUpperUpLeft"] = (blendshapes["mouthUpperUpLeft"] || 0) + MEDIUM;
@@ -1251,8 +1061,6 @@ export class Avatar {
 
             case "love":
             case "loving":
-            case "affectionate":
-                // Soft smile, slightly closed eyes
                 blendshapes["mouthSmileLeft"] = (blendshapes["mouthSmileLeft"] || 0) + MEDIUM;
                 blendshapes["mouthSmileRight"] = (blendshapes["mouthSmileRight"] || 0) + MEDIUM;
                 blendshapes["eyeBlinkLeft"] = (blendshapes["eyeBlinkLeft"] || 0) + LIGHT;
@@ -1263,7 +1071,6 @@ export class Avatar {
 
             case "confused":
             case "puzzled":
-                // Asymmetric brows, slight frown
                 blendshapes["browOuterUpLeft"] = (blendshapes["browOuterUpLeft"] || 0) + MEDIUM;
                 blendshapes["browDownRight"] = (blendshapes["browDownRight"] || 0) + LIGHT;
                 blendshapes["mouthLeft"] = (blendshapes["mouthLeft"] || 0) + LIGHT;
@@ -1272,22 +1079,21 @@ export class Avatar {
 
             case "thinking":
             case "thoughtful":
-                // Slight squint, mouth shifted
                 blendshapes["eyeSquintLeft"] = (blendshapes["eyeSquintLeft"] || 0) + LIGHT;
                 blendshapes["eyeSquintRight"] = (blendshapes["eyeSquintRight"] || 0) + LIGHT;
                 blendshapes["browInnerUp"] = (blendshapes["browInnerUp"] || 0) + LIGHT;
                 blendshapes["mouthPucker"] = (blendshapes["mouthPucker"] || 0) + LIGHT;
                 blendshapes["mouthRight"] = (blendshapes["mouthRight"] || 0) + LIGHT;
                 break;
-
-            case "neutral":
-            default:
-                // No additional modifiers for neutral
-                break;
         }
 
-        // Clamp all values to 0-1
+        // ── FINAL REFINEMENT & CLAMPING ──────────────────────────────────────
         for (const key in blendshapes) {
+            // DAMPER: Reduce "width" blendshapes to prevent wide-mouth distortion
+            if (key.includes("Stretch") || key.includes("Smile")) {
+                blendshapes[key] *= 0.75; // Tone down the width by 25%
+            }
+            // Clamp strictly 0 to 1
             blendshapes[key] = Math.max(0, Math.min(1, blendshapes[key]));
         }
     }
@@ -1295,6 +1101,14 @@ export class Avatar {
     // Show emotion on face WITHOUT lip sync (for idle emotional state)
     showEmotion(emotion, intensity = 1.0, triggerAnimation = true) {
         if (!this.faceMesh || !this.morphTargetDictionary) return;
+
+        // ── INTERRUPT any background recovery or current transition ──
+        this._recoveryId++; 
+
+        // ── CLEAN START: Reset face only if emotion changed ──
+        if (this.currentEmotion !== emotion) {
+            this.resetFace();
+        }
 
         const blendshapes = {};
         this.applyEmotionModifiers(emotion, blendshapes);
@@ -1313,9 +1127,9 @@ export class Avatar {
         }
 
         this.currentEmotion = emotion;
-        this.log(`Showing emotion: ${emotion} (intensity: ${intensity})`);
+        // this.log(`Showing emotion: ${emotion} (intensity: ${intensity})`);
 
-        // Trigger corresponding body animation if enabled
+        // Optionally trigger a matching body animation
         if (triggerAnimation) {
             this.playEmotionAnimation(emotion, intensity);
         }
@@ -1395,113 +1209,15 @@ export class Avatar {
      */
     getAnimationForEmotion(emotion, intensity = 1.0) {
         // Emotion to animation mapping
-        // Returns array of possible animations, will pick based on intensity
         const emotionAnimationMap = {
-            'happy': {
-                high: ['dance', 'jump', 'clap'],      // Intense happiness
-                medium: ['happy', 'clap'],             // Moderate happiness
-                low: ['happy']                          // Subtle happiness
-            },
-            'joy': {
-                high: ['dance', 'jump', 'clap'],
-                medium: ['happy', 'clap'],
-                low: ['happy']
-            },
-            'excited': {
-                high: ['jump', 'dance', 'clap'],
-                medium: ['jump', 'happy'],
-                low: ['happy']
-            },
-            'sad': {
-                high: ['sad'],                          // Deep sadness (slow, head down)
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'depressed': {
-                high: ['sad'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'upset': {
-                high: ['sad'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'angry': {
-                high: ['angry', 'hug'],                // Very angry (tense posture)
-                medium: ['angry'],
-                low: ['angry']
-            },
-            'frustrated': {
-                high: ['angry'],
-                medium: ['angry'],
-                low: ['angry']
-            },
-            'surprised': {
-                high: ['jump'],                        // Big surprise - jump
-                medium: ['happy'],                     // Moderate surprise - gesture
-                low: ['happy']
-            },
-            'shocked': {
-                high: ['jump'],
-                medium: ['happy'],
-                low: ['happy']
-            },
-            'amazed': {
-                high: ['jump', 'clap'],
-                medium: ['clap'],
-                low: ['happy']
-            },
-            'fear': {
-                high: ['sad'],                         // Cowering/defensive
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'scared': {
-                high: ['sad'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'worried': {
-                high: ['sad'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'fearful': {
-                high: ['sad', 'crouch'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'disgusted': {
-                high: ['sad'],
-                medium: ['sad'],
-                low: ['sad']
-            },
-            'love': {
-                high: ['hug', 'happy'],                // Warm, open gestures
-                medium: ['hug'],
-                low: ['happy']
-            },
-            'grateful': {
-                high: ['pray', 'hug'],                 // Thankful gestures
-                medium: ['pray'],
-                low: ['happy']
-            },
-            'confused': {
-                high: ['idle'],                        // Confused - minimal animation
-                medium: ['idle'],
-                low: ['idle']
-            },
-            'thinking': {
-                high: ['idle'],                        // Thoughtful - subtle
-                medium: ['idle'],
-                low: ['idle']
-            },
-            'neutral': {
-                high: ['idle'],
-                medium: ['idle'],
-                low: ['idle']
-            }
+            'happy': { high: ['dance', 'clap'], medium: ['happy'], low: ['happy'] },
+            'sad': { high: ['sad'], medium: ['sad'], low: ['sad'] },
+            'angry': { high: ['sad'], medium: ['sad'], low: ['sad'] },
+            'surprised': { high: ['jump'], medium: ['jump'], low: ['jump'] },
+            'excited': { high: ['dance', 'jump'], medium: ['clap'], low: ['clap'] },
+            'grateful': { high: ['pray', 'clap'], medium: ['pray'], low: ['pray'] },
+            'love': { high: ['pray', 'happy'], medium: ['happy'], low: ['happy'] },
+            'neutral': { high: ['idle'], medium: ['idle'], low: ['idle'] }
         };
 
         // Determine intensity level
@@ -1534,92 +1250,23 @@ export class Avatar {
      * Handles animation queuing to prevent conflicts
      */
     playEmotionAnimation(emotion, intensity = 1.0) {
-        // In Interview Mode, we suppress dramatic body animations (dance, jump, clap)
-        // to maintain a professional "interviewer" posture.
-        // Only allow subtle face-driven sitting expressions.
-        if (this.isInterviewMode) {
-            this.log(`[Interview] Suppressing body animation for ${emotion} (facial expression only)`);
-
-            // Special case: if we have 'Sitting Laughing' and they are happy, we COULD play it,
-            // but for a "real interviewer type" feel, keeping it to just face is often better.
-            // Let's stick to face + the steady sitting pose.
-            this.processEmotionQueue();
-            return;
-        }
-
-        // Check if ANY animations are available first
         const availableAnimations = Object.keys(this.animations || {});
-        if (availableAnimations.length === 0) {
-            if (!this.warnedNoAnimations) {
-                this.log(`⚠️ No animations in model - using facial expressions only`);
-                this.log(`To add animations, load a model with animation clips (e.g., from Mixamo)`);
-                this.warnedNoAnimations = true;
-            }
-            this.processEmotionQueue();
-            return;
-        }
+        if (availableAnimations.length === 0) return;
 
         const animationName = this.getAnimationForEmotion(emotion, intensity);
 
-        // For neutral/idle emotions — just smoothly loop idle, never mark as "playing emotion"
+        // For neutral/idle emotions — just smoothly loop idle
         if (animationName === 'idle' || emotion.toLowerCase() === 'neutral') {
             if (!this.isPlayingEmotionAnimation) {
-                this.playAnimation('idle'); // looping, never gets stuck
+                this.playAnimation('idle'); 
             }
-            this.processEmotionQueue();
             return;
         }
 
-        // Don't interrupt if already playing a non-idle emotion animation
-        if (this.isPlayingEmotionAnimation) {
-            this.log(`Emotion animation already playing, queueing ${emotion}`);
-            this.emotionAnimationQueue.push({ emotion, intensity });
-            return;
-        }
-
-        // Check if this specific animation exists
-        if (!this.animations[animationName]) {
-            this.log(`Animation '${animationName}' not found, skipping emotion animation`);
-            this.processEmotionQueue();
-            return;
-        }
-
-        this.isPlayingEmotionAnimation = true;
-        this.log(`Playing emotion animation: ${animationName} for ${emotion}`);
-
-        // Play the animation once
+        // ── INTERRUPT: Play immediately if the emotion changed ──
+        // Removed the queuing logic to allow for real-time responsiveness.
+        this.log(`Directly playing emotion animation: ${animationName} for ${emotion}`);
         this.playAnimation(animationName, true);
-
-        // Use the mixer 'finished' event to know when we're done (reliable, no polling loop)
-        const onEmotionFinished = (e) => {
-            if (e.action === this.animations[animationName]) {
-                this.mixer.removeEventListener('finished', onEmotionFinished);
-                this.isPlayingEmotionAnimation = false;
-                this.log(`Emotion animation completed: ${animationName}`);
-
-                // Return to idle if nothing active
-                if (!this.isTalking) {
-                    this.playAnimation('idle');
-                }
-
-                // Process next queued emotion
-                this.processEmotionQueue();
-            }
-        };
-        this.mixer.addEventListener('finished', onEmotionFinished);
-
-        // Safety timeout: if mixer 'finished' never fires (e.g. clip issue), release the lock
-        const safetyMs = ((this.animations[animationName]._clip &&
-            this.animations[animationName]._clip.duration) || 4) * 1000 + 1000;
-        setTimeout(() => {
-            if (this.isPlayingEmotionAnimation) {
-                this.mixer.removeEventListener('finished', onEmotionFinished);
-                this.isPlayingEmotionAnimation = false;
-                this.log(`Safety timeout released lock for: ${animationName}`);
-                if (!this.isTalking) this.playAnimation('idle');
-                this.processEmotionQueue();
-            }
-        }, safetyMs);
     }
 
     /**
@@ -1653,18 +1300,22 @@ export class Avatar {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        const delta = this.clock.getDelta();
-        if (this.mixer) this.mixer.update(delta);
+        try {
+            const delta = this.clock.getDelta();
+            if (this.mixer) this.mixer.update(delta);
+        } catch (e) {
+            console.error("Animation Mixer Update Error:", e);
+        }
 
         if (this.planet) {
             this.planet.rotation.y += 0.001; // slowly spin the planet
         }
-        
+
         // Moving Space Effect (stars flying towards camera like a video)
         if (this.starField) {
             this.starField.rotation.y += 0.0002; // slow galaxy drift
             const positions = this.starField.geometry.attributes.position.array;
-            for(let i = 2; i < positions.length; i += 3) {
+            for (let i = 2; i < positions.length; i += 3) {
                 positions[i] += 4; // Move star forward along Z-axis
                 if (positions[i] > 1000) {
                     positions[i] = -3000; // Reset star deep into the background when it passes camera
@@ -1678,8 +1329,8 @@ export class Avatar {
     cleanAnimationClips(clip) {
         if (!clip) return;
 
-        // Bone name mapping from Mixamo/Bip01 to Ready Player Me standard names
-        const nameMap = {
+        // ── MIXAMO / Bip01 bone names → Ready Player Me ────────────────────────
+        const mixamoToRPM = {
             'Pelvis': 'Hips',
             'L_Thigh': 'LeftUpLeg', 'R_Thigh': 'RightUpLeg',
             'L_Calf': 'LeftLeg', 'R_Calf': 'RightLeg',
@@ -1690,16 +1341,50 @@ export class Avatar {
             'L_Forearm': 'LeftForeArm', 'R_Forearm': 'RightForeArm',
             'L_Hand': 'LeftHand', 'R_Hand': 'RightHand',
             'Spine1': 'Spine1', 'Spine2': 'Spine2',
-            'Hips': 'Hips', 'Spine': 'Spine', 'Neck': 'Neck', 'Head': 'Head'
+            'Hips': 'Hips', 'Spine': 'Spine',
+            'Neck': 'Neck', 'Head': 'Head'
         };
 
-        // Filter out tracks that cause the avatar to disappear:
-        //  - Root-level position tracks (Hips.position moves the whole skeleton off-screen)
-        //  - Any scale tracks from FBX (they override the model scale)
-        // Uses case-insensitive regex to handle all Mixamo naming variations
+        // ── CMU Mocap bone names → Ready Player Me ─────────────────────────────
+        // CMU uses a different hierarchy exported by RancidMilk via Blender
+        const cmuToRPM = {
+            // Root / Hips
+            'root': 'Hips',
+            'Hips': 'Hips',
+            // Spine chain
+            'LowerBack': 'Spine',
+            'Spine': 'Spine',
+            'Spine1': 'Spine1',
+            'Neck': 'Neck',
+            'Neck1': 'Neck',
+            'Head': 'Head',
+            // Left Arm
+            'LeftShoulder': 'LeftShoulder',
+            'LeftArm': 'LeftArm',
+            'LeftForeArm': 'LeftForeArm',
+            'LeftHand': 'LeftHand',
+            // Right Arm
+            'RightShoulder': 'RightShoulder',
+            'RightArm': 'RightArm',
+            'RightForeArm': 'RightForeArm',
+            'RightHand': 'RightHand',
+            // Left Leg
+            'LeftUpLeg': 'LeftUpLeg',
+            'LeftLeg': 'LeftLeg',
+            'LeftFoot': 'LeftFoot',
+            'LeftToeBase': 'LeftToeBase',
+            // Right Leg
+            'RightUpLeg': 'RightUpLeg',
+            'RightLeg': 'RightLeg',
+            'RightFoot': 'RightFoot',
+            'RightToeBase': 'RightToeBase',
+        };
+
+        // Combined map — Mixamo takes priority, CMU fills remaining
+        const nameMap = { ...cmuToRPM, ...mixamoToRPM };
+
+        // ── Strip root position tracks (moves avatar off-screen) ───────────────
         clip.tracks = clip.tracks.filter(track => {
-            // Strip Mixamo prefixes first to read the real bone + property
-            // Case-insensitive to catch: mixamorig:, mixamorig1:, Mixamorig:, etc.
             let cleanName = track.name
                 .replace(/^mixamorig[0-9]*:?/gi, '')
                 .replace(/^Bip01_/g, '')
@@ -1709,21 +1394,18 @@ export class Avatar {
             const boneName = parts[0].toLowerCase();
             const prop = parts.length > 1 ? parts.slice(1).join('.').toLowerCase() : '';
 
-            // REMOVE: root position tracks (moves avatar off-screen due to Mixamo root motion)
-            if (boneName === 'hips' && prop.includes('position')) {
-                console.log(`  ✂️ Stripped root position track: ${track.name}`);
+            // Remove root position (causes avatar to fly off-screen)
+            if ((boneName === 'hips' || boneName === 'root') && prop.includes('position')) {
                 return false;
             }
-
-            // REMOVE: any scale tracks (overrides model scale, causes avatar to shrink/vanish)
+            // Remove scale tracks
             if (prop.includes('scale')) {
                 return false;
             }
-
             return true;
         });
 
-        // Rename remaining tracks with clean bone names
+        // ── Rename bone tracks to match RPM skeleton ──────────────────────────
         clip.tracks.forEach(track => {
             let name = track.name
                 .replace(/^mixamorig[0-9]*:?/gi, '')
@@ -1734,7 +1416,6 @@ export class Avatar {
             let boneName = parts[0];
             const prop = parts.length > 1 ? '.' + parts.slice(1).join('.') : '';
 
-            // Apply bone name mapping
             if (nameMap[boneName]) {
                 boneName = nameMap[boneName];
             }

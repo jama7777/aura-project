@@ -1,40 +1,61 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-import shutil
 import os
+import shutil
 import time
 import uuid
-from pydantic import BaseModel
+import sys
+import subprocess
+import re
+from typing import List, Optional
+
+# Suppress HuggingFace tokenizer parallelism warnings (prevents deadlocks on fork)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request  # type: ignore
+from fastapi.staticfiles import StaticFiles  # type: ignore
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore
+from fastapi.responses import FileResponse, JSONResponse  # type: ignore
+from pydantic import BaseModel  # type: ignore
+from dotenv import load_dotenv  # type: ignore
+from starlette.concurrency import run_in_threadpool # for non-blocking task execution
+import google.generativeai as genai  # type: ignore
+import PyPDF2  # type: ignore
+
+# Load environment variables
+load_dotenv()
+
+# Ensure src is in path for imports
+sys.path.append(os.getcwd())
+
+# Aura modules
+from src.core.brain import (  # type: ignore
+    process_input,
+    clear_conversation_history,
+    clear_long_term_memory,
+    load_memory_into_session
+)
+from src.output.tts import speak, load_tts_model, update_voice_config # Import update_voice_config
+from src.perception.audio import (  # type: ignore
+    transcribe_audio_file,
+    analyze_emotion_file,
+    load_audio_models,
+    load_text_emotion_model,
+    text_emotion_classifier
+)
+from src.perception.grammar import load_grammar_model, correct_text_local, get_corrections  # type: ignore
+from src.perception.nv_ace import ace_client  # type: ignore
+
+# ── End of Imports ─────────────────────────────────────────────────────────────
 
 # ── ffmpeg path resolution ─────────────────────────────────────────────────────
-# On Apple Silicon Macs, Homebrew installs to /opt/homebrew/bin which is NOT
-# automatically on the PATH when launched by some tools. Patch it in here so
-# both subprocess calls and Python libraries (whisper, huggingface) can find it.
 FFMPEG_PATHS = [
-    '/opt/homebrew/bin/ffmpeg',   # Apple Silicon (M1/M2/M3)
-    '/usr/local/bin/ffmpeg',      # Intel Mac Homebrew
+    '/opt/homebrew/bin/ffmpeg',   # Apple Silicon
+    '/usr/local/bin/ffmpeg',      # Intel Mac
     '/usr/bin/ffmpeg',            # Linux
 ]
 FFMPEG_BIN = next((p for p in FFMPEG_PATHS if os.path.isfile(p)), 'ffmpeg')
 if FFMPEG_BIN != 'ffmpeg':
-    # Prepend the directory to PATH so child processes and libraries also find it
     _ffmpeg_dir = os.path.dirname(FFMPEG_BIN)
     os.environ['PATH'] = _ffmpeg_dir + os.pathsep + os.environ.get('PATH', '')
-    print(f'[server] ffmpeg found at: {FFMPEG_BIN} (added {_ffmpeg_dir} to PATH)')
-else:
-    print('[server] WARNING: ffmpeg not found in known paths — audio conversion may fail!')
-
-# Import Aura modules
-# Ensure src is in path
-import sys
-sys.path.append(os.getcwd())
-
-from src.core.brain import process_input, clear_conversation_history, set_interview_context, clear_long_term_memory
-from src.output.tts import speak, load_tts_model
-from src.perception.audio import transcribe_audio_file, analyze_emotion_file, load_audio_models, load_text_emotion_model
-from src.perception.nv_ace import ace_client
 
 app = FastAPI()
 
@@ -57,20 +78,29 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 app.mount("/face-models", StaticFiles(directory="assets/face-models"), name="face-models")
 
-# Global Event Queue for External Controls
-global_event_queue = []
+
 
 # Load models on startup
 @app.on_event("startup")
 async def startup_event():
     print("Loading models...")
     try:
-        load_tts_model()
         load_audio_models()
         load_text_emotion_model()
+        load_grammar_model()
+        load_tts_model()
         print("Models loaded.")
     except Exception as e:
         print(f"Error loading models: {e}")
+
+    # ── Seed conversation context from long-term ChromaDB memory ──────────────────
+    # This ensures AURA remembers the user's name / past topics even after
+    # a page refresh or server restart — without the user repeating themselves.
+    try:
+        load_memory_into_session()
+        print("[server] Memory seeded from ChromaDB on startup.")
+    except Exception as e:
+        print(f"[server] Could not seed memory from ChromaDB: {e}")
 
 class ChatRequest(BaseModel):
     text: str
@@ -79,109 +109,73 @@ class ChatRequest(BaseModel):
     gesture: str = "none"
     provider: str = "auto"
 
-# Emotion priority weights — higher = more trusted source
-EMOTION_WEIGHTS = {
-    'audio': 0.70,  # audio tone of voice (from Wav2Vec2)
-    'text':  0.65,  # words the user said / typed
-    'face':  0.30,  # face camera detection (less reliable in real use)
-}
-EMOTION_PRIORITY = ['happy','excited','joy','sad','angry','surprised','love','fear','disgust','confused','thinking','neutral']
-
-def fuse_emotions(text_or_audio_emotion: str, face_emotion: str) -> str:
+def triple_fuse_emotions(audio_emo: str, text_emo: str, face_emo: str) -> str:
     """
-    Blend multiple emotion signals into one.
-    Rule:
-      - If both agree → return that emotion (boosted confidence, no change needed)
-      - If face is neutral → trust audio/text fully
-      - If audio/text is neutral → trust face at lower weight
-      - If they conflict → audio/text wins (higher weight)
+    Blend three source signals into a single unified emotion signal.
+    PRIORITY HIERARCHY (AURA standard):
+    1. Audio (Prosody/Tone) — Humans can't easily fake tone-of-voice.
+    2. Text (NLP/Sentiment) — The words used.
+    3. Face (Vision/Cam)   — Least reliable due to lighting/camera artifacts.
     """
-    a = (text_or_audio_emotion or 'neutral').lower()
-    f = (face_emotion or 'neutral').lower()
+    a = (audio_emo or 'neutral').lower()
+    t = (text_emo or 'neutral').lower()
+    f = (face_emo or 'neutral').lower()
 
-    if a == f:
-        return a                          # perfect agreement
-    if a == 'neutral' and f != 'neutral':
-        return f                          # only face has signal
-    # audio/text always wins over face in a conflict
-    return a
+    print(f"[Fusion] Input: Audio={a}, Text={t}, Face={f}")
+
+    # 1. AUDIO IS PRIMARY (Tone-of-Voice wins in all conflicts)
+    if a != 'neutral':
+        return a
+    
+    # 2. TEXT IS SECONDARY (Meaning of words wins over face)
+    if t != 'neutral':
+        return t
+    
+    # 3. FACE IS TERTIARY (Visual backup)
+    return f
 
 @app.post("/api/clear-history")
 async def clear_history_endpoint():
-    """Reset BOTH deep ChromaDB memory and short-term session history."""
+    """Reset ONLY the short-term in-session conversation window.
+    Long-term ChromaDB memory is preserved so AURA still remembers
+    the user's name, preferences, and past topics after a new chat."""
+    clear_conversation_history()
+    return {"status": "success", "memory": "session_cleared"}
+
+
+@app.post("/api/wipe-memory")
+async def wipe_memory_endpoint():
+    """Permanently erase ALL memory (ChromaDB + session history).
+    Only use this when you truly want AURA to forget everything."""
     clear_conversation_history()
     success = clear_long_term_memory()
-    return {"status": "success" if success else "failed", "memory": "wiped"}
+    return {"status": "success" if success else "failed", "memory": "fully_wiped"}
 
-@app.post("/api/upload-resume")
-async def upload_resume(file: UploadFile = File(...)):
-    if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-    
-    # Save the file temporarily
-    temp_filename = f"temp_{uuid.uuid4()}.pdf"
-    with open(temp_filename, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    try:
-        import PyPDF2
-        text = ""
-        with open(temp_filename, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
-        
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="Could not extract text from the PDF.")
-                
-        # Update the brain's context with the resume
-        set_interview_context(text)
-        
-        return {"status": "success", "message": "Resume parsed and Interview Mode enabled."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse resume: {str(e)}")
-    finally:
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
+
+@app.get("/api/updates")
+async def get_updates():
+    """
+    Health check / Queue polling endpoint.
+    Used by startup scripts and diagnostic UI to confirm server readiness.
+    """
+    return {"status": "online", "updates": [], "timestamp": time.time()}
+
+
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
-    # Fuse camera face emotion + text/speech emotion before sending to brain
-    fused_emotion = fuse_emotions(request.emotion, request.face_emotion)
+    # For text-only chat, audio emotion is obviously neutral
+    fused_emotion = triple_fuse_emotions("neutral", request.emotion, request.face_emotion)
     print(f"Received chat: {request.text} | text_emo={request.emotion} face_emo={request.face_emotion} → fused={fused_emotion} | Gesture: {request.gesture}")
 
-    # NEW: If text is totally empty but gesture exists, just return animations! NO LLM!
-    if not request.text or not request.text.strip():
-        if request.gesture and request.gesture != "none":
-            animations = []
-            req_g = request.gesture.lower()
-            if "thumbs_up" in req_g: animations.append("happy")
-            elif "victory" in req_g: animations.append("dance")
-            elif "wave" in req_g: animations.append("clap")
-            elif "clap" in req_g: animations.append("clap")
-            elif "dance" in req_g: animations.append("dance")
-            elif "hug" in req_g: animations.append("happy")
-            
-            if not animations:
-                animations = ["idle"]
-                
-            return {
-                "text": "",
-                "emotion": "neutral",
-                "audio_url": None,
-                "blendshapes": {},
-                "animations": animations
-            }
-
-    # Process input — pass both the fused emotion AND the raw face emotion so
-    # the brain can detect conflicts between what the face shows vs what words say
-    processed_result = process_input(
+    # Process input normally even if text is empty (allows responding to gestures/emotions)
+    processed_result = await process_input(
         {
             "text": request.text,
-            "emotion": fused_emotion,          # primary emotion (text/audio wins in conflict)
-            "face_emotion": request.face_emotion,  # raw camera emotion for conflict detection
+            "emotion": fused_emotion,
+            "audio_emotion": "neutral",           # No audio in text chat
+            "text_emotion": request.emotion,      # request.emotion is text sentiment in chat
+            "face_emotion": request.face_emotion, # raw camera emotion for conflict detection
             "gesture": request.gesture
         },
         provider=request.provider
@@ -208,6 +202,22 @@ async def chat(request: ChatRequest):
         animations.append("dance")
     elif "wave" in request.gesture:
         animations.append("clap") # Fallback for wave
+    elif "thumbs_down" in request.gesture:
+        animations.append("sad")
+    elif "ok" in request.gesture:
+        animations.append("happy")
+    elif "iloveyou" in request.gesture:
+        animations.append("pray")
+    elif "vulcan" in request.gesture:
+        animations.append("jump")
+    elif "point" in request.gesture:
+        animations.append("happy")
+    elif "horns" in request.gesture:
+        animations.append("dance")
+    elif "call_me" in request.gesture:
+        animations.append("happy")
+    elif "fist" in request.gesture:
+        animations.append("idle")
     elif "clap" in request.gesture:
         animations.append("clap")
     elif "dance" in request.gesture:
@@ -237,12 +247,19 @@ async def chat(request: ChatRequest):
     elif emo == "grateful":
         animations.append("pray") # Praying
     
-    # Also consider User Input Emotion if LLM is neutral
-    if not animations and request.emotion != "neutral":
-        if request.emotion == "happy":
+    # Also consider Fused Input Emotion or Raw Face Emotion if LLM is neutral
+    active_input_emo = fused_emotion if fused_emotion != "neutral" else request.face_emotion
+    if not animations and active_input_emo != "neutral":
+        if active_input_emo == "happy":
             animations.append("happy")
-        elif request.emotion == "sad":
+        elif active_input_emo == "sad":
             animations.append("sad")
+        elif active_input_emo == "surprised":
+            animations.append("jump")
+        elif active_input_emo == "angry":
+            animations.append("sad") # fallback 
+        elif active_input_emo == "excited":
+            animations.append("clap")
     
     # 2. Keyword Mapping (if no gesture specific animation or to add more)
     if not animations:
@@ -304,25 +321,22 @@ async def animate_text(request: AnimateRequest):
     
     if "hug" in lower_text: animations.append("happy")
     if "dance" in lower_text: animations.append("dance")
-    if "happy" in lower_text or "laugh" in lower_text: animations.append("happy")
-    if "sad" in lower_text or "cry" in lower_text: animations.append("sad")
-    if "clap" in lower_text: animations.append("clap")
-    if "pray" in lower_text or "thanks" in lower_text: animations.append("pray")
-    if "jump" in lower_text or "wow" in lower_text: animations.append("jump")
+    if "happy" in lower_text or "laugh" in lower_text or "funny" in lower_text or "haha" in lower_text: animations.append("funny")
+    if "sad" in lower_text or "cry" in lower_text or "upset" in lower_text: animations.append("sad")
+    if "clap" in lower_text or "congrats" in lower_text: animations.append("clap")
+    if "pray" in lower_text or "thanks" in lower_text or "grateful" in lower_text: animations.append("grateful")
+    if "jump" in lower_text or "wow" in lower_text or "amazing" in lower_text: animations.append("amazed")
+    if "tired" in lower_text or "sleepy" in lower_text or "exhausted" in lower_text: animations.append("tired")
+    if "bored" in lower_text or "boring" in lower_text: animations.append("bored")
+    if "hi " in lower_text or "hello" in lower_text or "hey" in lower_text or "bye" in lower_text: animations.append("waving")
     
     if not animations:
-        animations = ["idle"]
+        # Fallback to pure emotion if no keywords
+        animations = [request.emotion] if request.emotion != "neutral" else ["idle"]
         
     audio_url = f"/audio/{os.path.basename(audio_file)}" if audio_file else None
     
-    
-    # --- EXTERNAL CONTROL QUEUE ---
-    # Store commands for the frontend to pick up (Simple Polling)
-    # In production, use WebSockets or SSE.
-    # global_event_queue is defined globally
-    
-    # Add to queue for the frontend to pick up
-    event_data = {
+    return {
         "text": request.text,
         "emotion": request.emotion,
         "audio_url": audio_url,
@@ -330,26 +344,36 @@ async def animate_text(request: AnimateRequest):
         "face_animation": face_animation,
         "timestamp": time.time()
     }
-    global_event_queue.append(event_data)
-    
-    # Keep queue size small
-    if len(global_event_queue) > 5:
-        global_event_queue.pop(0)
 
-    print(f"Added animation to queue. Queue size: {len(global_event_queue)}")
+class VoiceSelectionRequest(BaseModel):
+    lang: str = "en"
+    tld: str = "com"
 
-    return event_data
-
-@app.get("/api/updates")
-async def get_updates():
+@app.post("/api/set-voice")
+async def set_voice(request: VoiceSelectionRequest):
     """
-    Frontend polls this endpoint to see if there are any external commands (from ChatGPT ext)
-    to execute.
+    Change the gTTS voice (language and accent/TLD).
     """
-    if global_event_queue:
-        # Return and clear the oldest event
-        return global_event_queue.pop(0)
-    return {}
+    update_voice_config(lang=request.lang, tld=request.tld)
+    return {"status": "success", "voice": f"{request.lang} (tld: {request.tld})"}
+
+@app.get("/api/voices")
+async def get_voices():
+    """Returns the list of common voices (TLDs) supported for English."""
+    voices = [
+        {"name": "United States (US)", "lang": "en", "tld": "com"},
+        {"name": "United Kingdom (UK)", "lang": "en", "tld": "co.uk"},
+        {"name": "India (IN)", "lang": "en", "tld": "co.in"},
+        {"name": "Australia (AU)", "lang": "en", "tld": "com.au"},
+        {"name": "Canada (CA)", "lang": "en", "tld": "ca"},
+        {"name": "South Africa (ZA)", "lang": "en", "tld": "co.za"},
+        {"name": "Hindi (India)", "lang": "hi", "tld": "com"},
+        {"name": "French (France)", "lang": "fr", "tld": "com"},
+        {"name": "Spanish (Spain)", "lang": "es", "tld": "com"},
+    ]
+    return {"status": "success", "voices": voices}
+
+
 
 
 class A2FRequest(BaseModel):
@@ -406,7 +430,7 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
         try:
             with open(raw_filename, 'rb') as f:
                 header = f.read(12)
-                is_wav = header[:4] == b'RIFF' and header[8:12] == b'WAVE'
+                is_wav = header.startswith(b'RIFF') and header.startswith(b'WAVE', 8)
         except:
             pass
         
@@ -422,6 +446,7 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
                     FFMPEG_BIN, '-y', '-i', raw_filename,
                     '-ar', '16000',  # 16kHz sample rate (optimal for Whisper)
                     '-ac', '1',      # Mono audio
+                    '-af', 'speechnorm=e=12.5:r=0.0001:l=1', # Normalize/Boost speech
                     '-f', 'wav',     # Output format
                     wav_filename
                 ], capture_output=True, text=True, timeout=10)
@@ -448,11 +473,11 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
         
         print(f"Transcribing: {wav_filename} ({os.path.getsize(wav_filename)} bytes)")
         
-        # Transcribe
-        text = transcribe_audio_file(wav_filename)
+        # Transcribe (Blocking CPU task -> run in threadpool)
+        text = await run_in_threadpool(transcribe_audio_file, wav_filename)
         
-        # Analyze Emotion (Audio)
-        audio_emotion = analyze_emotion_file(wav_filename)
+        # Analyze Emotion (Audio) (Blocking CPU task -> run in threadpool)
+        audio_emotion = await run_in_threadpool(analyze_emotion_file, wav_filename)
         print(f"🎤 Voice Emotion Detected: {audio_emotion}")
 
         # Cleanup temp file
@@ -467,28 +492,35 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
             return {"input_text": None, "text": None, "audio_url": None, "animations": ["idle"]}
             
         print(f"Transcribed: '{text}', Audio Emotion: {audio_emotion} | Face Emotion: {face_emotion}")
+        
+        # Analyze Text sentiment of the speech too!
+        from src.perception.audio import analyze_text_sentiment
+        text_sentiment = await run_in_threadpool(analyze_text_sentiment, text)
 
-        # Fuse audio-detected emotion with face-camera emotion for richer context
-        fused_emotion = fuse_emotions(audio_emotion, face_emotion)
-        print(f"Fused Emotion → {fused_emotion} (audio={audio_emotion}, face={face_emotion})")
+        # Fused Emotion using NEW triple-signal logic
+        fused_emotion = triple_fuse_emotions(audio_emotion, text_sentiment, face_emotion)
+        print(f"Fused Emotion → {fused_emotion} (audio={audio_emotion}, text={text_sentiment}, face={face_emotion})")
 
-        # Process — pass both fused emotion and raw face emotion for conflict detection
-        processed_result = process_input({
+        # Process — pass both fused emotion and raw individual signals for dissonance detection
+        processed_result = await process_input({
             "text": text,
             "emotion": fused_emotion,
-            "face_emotion": face_emotion,   # raw camera emotion for conflict detection
+            "audio_emotion": audio_emotion,
+            "text_emotion": text_sentiment,
+            "face_emotion": face_emotion,
             "gesture": gesture
         })
         response_text = processed_result["text"]
         response_emotion = processed_result["emotion"]
         
-        # Generate Audio
-        audio_file = speak(response_text, return_file=True)
+        # Generate Audio (Blocking I/O/CPU task -> run in threadpool)
+        audio_file = await run_in_threadpool(speak, response_text, return_file=True)
 
         # Generate Face Animation using NVIDIA ACE
         face_animation = None
         if audio_file:
-            face_animation = ace_client.process_audio(audio_file, emotion=response_emotion)
+            # Process NVIDIA ACE (sync blocking call -> threadpool)
+            face_animation = await run_in_threadpool(ace_client.process_audio, audio_file, emotion=response_emotion)
         
         # Determine animations (list)
         animations = []
@@ -498,28 +530,41 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
             if "thumbs_up" in gesture: animations.append("happy")
             elif "victory" in gesture: animations.append("dance")
             elif "wave" in gesture: animations.append("clap")
+            elif "thumbs_down" in gesture: animations.append("sad")
+            elif "ok" in gesture: animations.append("happy")
+            elif "iloveyou" in gesture: animations.append("pray")
+            elif "vulcan" in gesture: animations.append("jump")
+            elif "point" in gesture: animations.append("happy")
+            elif "horns" in gesture: animations.append("dance")
+            elif "call_me" in gesture: animations.append("happy")
+            elif "fist" in gesture: animations.append("idle")
             elif "clap" in gesture: animations.append("clap")
             elif "dance" in gesture: animations.append("dance")
             elif "hug" in gesture: animations.append("happy")
             
         emo = response_emotion
         if not animations:
-            if emo in ["happy", "funny"]: animations.append("happy")
-            elif emo == "excited": animations.append("clap")
+            if emo in ["happy", "joy", "funny"]: animations.append("funny")
+            elif emo == "excited": animations.append("excited")
             elif emo == "sad": animations.append("sad")
-            elif emo == "tired": animations.append("crouch")
-            elif emo == "surprised": animations.append("jump")
-            elif emo == "angry": animations.append("sad")
-            elif emo == "grateful": animations.append("pray")
+            elif emo == "tired": animations.append("tired")
+            elif emo == "surprised": animations.append("amazed")
+            elif emo == "angry": animations.append("angry")
+            elif emo == "grateful": animations.append("grateful")
+            elif emo == "thinking": animations.append("thinking")
+            elif emo == "confused": animations.append("confused")
         
         if not animations:
             if "hug" in lower_resp: animations.append("happy")
             if "dance" in lower_resp: animations.append("dance")
-            if "happy" in lower_resp or "laugh" in lower_resp: animations.append("happy")
-            if "sad" in lower_resp or "cry" in lower_resp: animations.append("sad")
-            if "clap" in lower_resp: animations.append("clap")
-            if "pray" in lower_resp or "thanks" in lower_resp: animations.append("pray")
-            if "jump" in lower_resp or "wow" in lower_resp: animations.append("jump")
+            if "happy" in lower_resp or "laugh" in lower_resp or "funny" in lower_resp or "haha" in lower_resp: animations.append("funny")
+            if "sad" in lower_resp or "cry" in lower_resp or "upset" in lower_resp: animations.append("sad")
+            if "clap" in lower_resp or "congrats" in lower_resp: animations.append("clap")
+            if "pray" in lower_resp or "thanks" in lower_resp or "grateful" in lower_resp: animations.append("grateful")
+            if "jump" in lower_resp or "wow" in lower_resp or "amazing" in lower_resp: animations.append("amazed")
+            if "tired" in lower_resp or "sleepy" in lower_resp or "exhausted" in lower_resp: animations.append("tired")
+            if "bored" in lower_resp or "boring" in lower_resp: animations.append("bored")
+            if "hi " in lower_resp or "hello" in lower_resp or "hey" in lower_resp or "bye" in lower_resp: animations.append("waving")
         
         if not animations:
             animations = ["idle"]
@@ -551,86 +596,116 @@ class CorrectionRequest(BaseModel):
     text: str
     source: str = "text"   # "text" | "voice"
 
+def get_llm_client_async(provider="openrouter"):
+    """Helper to get Async OpenAI-compatible client for NIM or OpenRouter."""
+    NV_KEY = os.getenv("NV_API_KEY")
+    OR_KEY = os.getenv("OPENROUTER_API_KEY")
+    from openai import AsyncOpenAI
+    if provider == "nvidia" and NV_KEY:
+        return AsyncOpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NV_KEY), "meta/llama3-70b-instruct"
+    if OR_KEY:
+        return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=OR_KEY), "openai/gpt-4o-mini"
+    return None, None
+
+async def correct_text_llm(raw_text: str):
+    """Attempt grammar correction using LLMs (NVIDIA -> OpenRouter)."""
+    try:
+        # 1. Try NVIDIA first
+        client, model = get_llm_client_async("nvidia")
+        if not client:
+             # 2. Fallback to OpenRouter
+             client, model = get_llm_client_async("openrouter")
+        
+        if not client: return None
+        
+        completion = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a professional spelling/grammar corrector. Return ONLY the fixed text, maintaining the original meaning. If correct, return as-is. No explanations."},
+                {"role": "user", "content": raw_text}
+            ],
+            temperature=0,
+            max_tokens=256,
+            timeout=4
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        # Handle 401/User not found silently
+        if "401" in str(e) or "User not found" in str(e):
+             return None
+        print(f"[Correction LLM] API error: {e}")
+        return None
+
 @app.post("/api/correct-text")
 async def correct_text(request: CorrectionRequest):
     """
     Correct spelling and grammar in user input.
-    Fallback chain: Gemini 2.0 Flash → OpenRouter GPT-4o-mini → passthrough
+    Hierarchy: Cloud Gemini -> Cloud NVIDIA/OpenRouter -> Local small-T5 -> Original
     """
     raw = (request.text or "").strip()
     if not raw or len(raw) < 3:
         return {"corrected": raw, "original": raw, "changed": False, "corrections": []}
 
-    correction_prompt = (
-        "You are a spelling and grammar corrector. "
-        "Your ONLY job is to fix spelling mistakes and obvious grammar errors in the user's input. "
-        "Rules:\n"
-        "1. Preserve the meaning and intent exactly.\n"
-        "2. Preserve casual/conversational phrasing (do NOT make it formal).\n"
-        "3. Do NOT add extra words, explanations, or punctuation unless it was clearly missing.\n"
-        "4. If the text is already correct, return it EXACTLY as-is.\n"
-        "5. Reply with ONLY the corrected text — nothing else.\n\n"
-        f"Input: {raw}"
-    )
     corrected = None
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-
+    
+    # 1. Try Gemini (Primary Cloud)
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel("models/gemini-2.0-flash")
-            result = model.generate_content(correction_prompt)
+            prompt = f"Correct any grammar or spelling errors in this casual sentence, keeping it natural. Return ONLY the corrected text: \"{raw}\""
+            result = model.generate_content(prompt)
             corrected = (result.text or "").strip()
+            print(f"[Correction] Gemini Cloud fixed: {corrected}")
         except:
             corrected = None
 
+    # 2. Try NIM / OpenRouter (Secondary Cloud)
     if not corrected:
-        openrouter_key = os.getenv("OPENROUTER_API_KEY")
-        if openrouter_key:
-            try:
-                from openai import OpenAI
-                _client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
-                completion = _client.chat.completions.create(
-                    model="openai/gpt-4o-mini",
-                    messages=[{"role": "user", "content": correction_prompt}],
-                    temperature=0.1, max_tokens=200
-                )
-                corrected = (completion.choices[0].message.content or "").strip()
-            except:
-                corrected = None
+        corrected = await correct_text_llm(raw)
+
+    # 3. Try Local Fallback (T5)
+    if not corrected:
+        try:
+            print("[Correction] Cloud methods failed, using local T5 model...")
+            corrected = correct_text_local(raw)
+        except Exception as e:
+            print(f"[Correction] Local fallback failed: {e}")
+            corrected = None
 
     if not corrected:
         return {"corrected": raw, "original": raw, "changed": False, "corrections": []}
 
-    if len(corrected) >= 2 and corrected[0] in ('"', "'") and corrected[-1] == corrected[0]:
-        corrected = corrected[1:-1].strip()
+    if len(corrected) >= 2 and ((corrected.startswith('"') and corrected.endswith('"')) or (corrected.startswith("'") and corrected.endswith("'"))):
+        corrected = corrected.strip("\"'")
 
-    changed = corrected.lower() != raw.lower()
+    changed = corrected.strip().lower() != raw.strip().lower()
     corrections = []
     if changed:
-        orig_words = raw.split()
-        corr_words = corrected.split()
-        for i in range(min(len(orig_words), len(corr_words))):
-            if orig_words[i].lower() != corr_words[i].lower():
-                corrections.append({"original": orig_words[i], "corrected": corr_words[i]})
+        # Use helper from grammar module for cleaner diffs
+        corrections = get_corrections(raw, corrected)
 
     return {
         "corrected": corrected,
         "original": raw,
         "changed": changed,
-        "corrections": corrections[:5]
+        "corrections": corrections
     }
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
     print(f"[Audio endpoint] Requested: {filename}")
+    # Check in root first (old behavior)
     file_path = os.path.abspath(filename)
+    if not os.path.exists(file_path):
+        # Then check in dedicated output folder
+        file_path = os.path.abspath(os.path.join("output", filename))
+
     if os.path.exists(file_path):
         return FileResponse(file_path)
+    
     print(f"[Audio endpoint] File not found: {file_path}")
     raise HTTPException(status_code=404, detail="File not found")
 
@@ -675,7 +750,7 @@ async def voice_test_api(file: UploadFile = File(...)):
     try:
         with open(raw_filename, 'rb') as f:
             header = f.read(12)
-            is_wav = header[:4] == b'RIFF' and header[8:12] == b'WAVE'
+            is_wav = header.startswith(b'RIFF') and header.startswith(b'WAVE', 8)
     except:
         pass
 
@@ -715,12 +790,13 @@ async def voice_test_api(file: UploadFile = File(...)):
     # Also run text emotion if transcript found
     text_emotion = None
     if transcript and transcript.strip():
-        from src.perception.audio import text_emotion_classifier
         if text_emotion_classifier:
             try:
-                result = text_emotion_classifier(transcript)
-                if result and result[0]:
-                    text_emotion = result[0][0]['label'].lower()
+                # Use classifier normally
+                res = text_emotion_classifier(transcript)
+                # Correct access: res is a list of dicts [{'label': '...', 'score': ...}]
+                if res and len(res) > 0:
+                    text_emotion = res[0]['label'].lower()
             except Exception as e:
                 print(f"Text emotion error: {e}")
 
@@ -731,6 +807,6 @@ async def voice_test_api(file: UploadFile = File(...)):
         "text_emotion": text_emotion,
         "emotions": [
             {"emotion": audio_emotion, "source": "audio", "confidence": 0.85},
-            {"emotion": text_emotion or "N/A", "source": "text", "confidence": 0.80} if text_emotion else None
+            {"emotion": text_emotion or "neutral", "source": "text", "confidence": 0.80}
         ]
     })

@@ -1,8 +1,11 @@
-import google.generativeai as genai
-from openai import OpenAI
-import chromadb
+import google.generativeai as genai  # type: ignore[import-untyped]
+from openai import AsyncOpenAI  # type: ignore[import-untyped]
+import chromadb  # type: ignore[import-untyped]
 import os
-from dotenv import load_dotenv
+import time
+import hashlib
+from typing import List, Dict, Any
+from dotenv import load_dotenv  # type: ignore[import-untyped]
 
 # Load environment variables from .env file
 load_dotenv()
@@ -10,407 +13,293 @@ load_dotenv()
 # --- CONFIGURATION ---
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 NVIDIA_API_KEY = os.getenv("NV_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # ── In-session conversation history ───────────────────────────────────────────
-# Stores the full multi-turn chat for the current server session.
-# Resets when the server restarts (i.e., when the user refreshes the page in --reload mode).
-# We keep a sliding window of the last MAX_HISTORY_TURNS turns to prevent token/lag blowup.
-MAX_HISTORY_TURNS = 10   # each "turn" = one user message + one AURA reply
-conversation_history = []   # list of {"role": "user"|"assistant", "content": str}
-interview_context_text = "" # Stores parsed resume text for Interview Mode
+MAX_HISTORY_TURNS = 10
+conversation_history: List[Dict[str, str]] = []
+
 
 # ── Bad-word filter ────────────────────────────────────────────────────────────
-# Crude words are stripped from user input before reaching the LLM.
-# The remaining clean words are still sent so the conversation continues normally.
-_BAD_WORDS = [
-    'fuck', 'fucking', 'fucked', 'fucker', 'fck', 'fuk',
-    'shit', 'shitting', 'shitty',
-    'bitch', 'bitching', 'bitchy',
-    'ass', 'asshole', 'arse',
-    'bastard', 'cunt', 'cock', 'dick', 'pussy',
-    'damn', 'dammit', 'hell',
-    'crap', 'piss', 'pissed',
-    'nigger', 'nigga', 'faggot', 'retard', 'whore', 'slut',
-]
+_BAD_WORDS = ['fuck', 'shit', 'bitch', 'asshole', 'bastard', 'cunt', 'dick', 'pussy']
 
 def filter_bad_words(text: str) -> str:
-    """
-    Remove bad/profane words from text, keeping the rest of the sentence intact.
-    Returns the cleaned text (may be empty string if entire input was profanity).
-    """
-    if not text:
-        return text
+    if not text: return text
     import re
     words = text.split()
     cleaned = []
     for w in words:
-        # Strip punctuation for comparison, keep original for output unless it's bad
         bare = re.sub(r"[^a-zA-Z0-9']", '', w).lower()
-        if bare in _BAD_WORDS:
-            # Replace with asterisks of same length for context
-            cleaned.append('*' * len(bare))
-        else:
-            cleaned.append(w)
+        if bare in _BAD_WORDS: cleaned.append('*' * len(bare))
+        else: cleaned.append(w)
     return ' '.join(cleaned)
 
 # Initialize ChromaDB
 try:
     client = chromadb.PersistentClient(path="./aura_memory.db")
-    collection = client.get_or_create_collection(name="user_memory")
-    print("Memory system initialized.")
+    collection = client.get_or_create_collection(
+        name="user_memory",
+        metadata={"hnsw:space": "cosine"} 
+    )
+    print("Memory system initialized (Deep Recall mode, Cosine Space).")
 except Exception as e:
     print(f"Error initializing memory: {e}")
     collection = None
 
 def get_llm_client(provider="openrouter"):
-    """
-    Returns a configured OpenAI-compatible client for the specified provider.
-    """
     if provider == "nvidia":
-        return OpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=NVIDIA_API_KEY
-        )
-    elif provider == "openrouter":
-        return OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY
-        )
-    elif provider == "local":
-        # Example for Ollama or LocalAI
-        return OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama"
-        )
-    else:
-        # Default to OpenRouter
-        return OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY
-        )
+        return AsyncOpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
+    return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
 
-def process_input(input_data, provider="auto"):
-    text     = input_data.get('text', '')
-    emotion  = input_data.get('emotion', 'neutral')   # from text/audio
-    gesture  = input_data.get('gesture', 'none')
-    face_emotion = input_data.get('face_emotion', 'neutral')  # raw camera emotion
+async def correct_grammar(text: str) -> str:
+    """
+    Optional preprocessing step to clean up speech-to-text artifacts or 
+    typos before the main reasoning step.
+    """
+    if not text or len(text.strip()) < 5:
+        return text
 
-    # ── Filter bad words from user text before processing ────────────────
-    if text:
+    try:
+        # 1. TIGHTER THRESHOLD: Don't guess for short/fragmented text
+        if not text or len(text.strip()) < 15:
+            return text
+
+        # Use a fast model for GEC (Grammar Error Correction)
+        client_gec = get_llm_client("openrouter")
+        response = await client_gec.chat.completions.create(
+            model="openai/gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a professional grammar and punctuation auto-fixer. Return ONLY the corrected version of the user's input, maintaining the original meaning. If the text is already correct, return it as-is. Do not add any explanation or notes."},
+                {"role": "user", "content": f'Fix this text: "{text}"'}
+            ],
+            max_tokens=256,
+            temperature=0,
+            timeout=3
+        )
+        corrected = response.choices[0].message.content.strip().strip('"')
+        if corrected:
+            print(f"[GEC] Corrected: '{text}' -> '{corrected}'")
+            return corrected
+    except Exception as e:
+        # 401/Unauthorized should fail silently to the original text
+        if "401" in str(e) or "User not found" in str(e):
+             # Silently skip GEC if API key is invalid
+             return text
+        print(f"[GEC] API Error (skipping): {e}")
+    
+    return text
+
+async def process_input(input_data, provider="auto"):
+    global conversation_history
+    text          = input_data.get('text', '')
+    audio_emotion = input_data.get('audio_emotion', 'neutral')
+    text_emotion  = input_data.get('text_emotion', 'neutral')
+    face_emotion  = input_data.get('face_emotion', 'neutral')
+    gesture       = input_data.get('gesture', 'none')
+    
+    # The 'fused' emotion is used for AURA's basic state, but we also look for dissonance
+    fused_emotion = input_data.get('emotion', 'neutral')
+
+    if text: 
+        # 1. Bad word filter
         text = filter_bad_words(text)
-        print(f"[brain] Filtered text: '{text}'")
+        
+        # 2. Grammar Correction (Pre-processing)
+        text = await correct_grammar(text)
 
-    # Valid interaction check: Need text, or gesture, or a non-neutral emotion
     has_text = bool(text and text.strip())
-    has_gesture = gesture and gesture != 'none'
-    has_emotion = emotion and emotion != 'neutral'
     
-    if not has_text and not has_gesture and not has_emotion:
-        return {"text": "I didn't catch that.", "emotion": "neutral"}
+    # Construction of prompt context description (Visual + Audio Awareness)
+    parts = []
+    if text and text.strip(): parts.append(f'User said: "{text}"')
+    if gesture and gesture != "none": parts.append(f"User is making a '{gesture.replace('_', ' ')}' hand gesture.")
+    user_input_desc = " ".join(parts) if parts else "User is interacting visually."
     
-    # For emotion-only input (no text, no gesture), create a descriptive query
-    if not has_text and not has_gesture and has_emotion:
-        text = f"I'm feeling {emotion}"
-
-    # ── Detect emotion conflict between face camera and text/audio ───────────
-    # Group emotions into polarities so we can spot meaningful contradictions.
-    _POSITIVE = {'happy', 'excited', 'surprised', 'joy', 'love', 'grateful'}
-    _NEGATIVE = {'sad', 'angry', 'fearful', 'fear', 'disgusted', 'disgust', 'frustrated'}
-
-    def _polarity(e):
-        e = (e or 'neutral').lower()
-        if e in _POSITIVE: return 'positive'
-        if e in _NEGATIVE: return 'negative'
-        return 'neutral'
-
-    face_pol  = _polarity(face_emotion)
-    text_pol  = _polarity(emotion)
-
-    # A real conflict: face is clearly positive while words/audio are clearly negative (or vice-versa)
-    emotion_conflict = (
-        face_emotion != 'neutral'
-        and emotion   != 'neutral'
-        and face_pol  != 'neutral'
-        and text_pol  != 'neutral'
-        and face_pol  != text_pol
-    )
-
-    if emotion_conflict:
-        print(f"[brain] ⚠️  Emotion CONFLICT: face={face_emotion} ({face_pol}) vs text/audio={emotion} ({text_pol})")
-    # ─────────────────────────────────────────────────────────────────────────
-
-    # Construct Query
-    if text:
-        user_input_desc = f'User said: "{text}"'
-    else:
-        user_input_desc = "User processed a visual gesture."
-
-    if emotion_conflict:
-        # Tell the LLM about the contradiction using clean language (no debug markers
-        # that could leak into the response)
-        query = (
-            f"{user_input_desc} "
-            f"[Note for AURA: Camera shows user looks {face_emotion}, "
-            f"but their words suggest they feel {emotion}. "
-            f"Acknowledge this mismatch warmly in your reply.]"
-        )
-    elif face_emotion == 'off':
-        # Camera is disabled — LLM must NOT comment on user face
-        query = f"{user_input_desc} Emotion: {emotion}. [Note: Your camera/eyes are currently OFF. Do NOT comment on the user's facial expression.]"
-    else:
-        query = f"{user_input_desc} Emotion: {emotion}. Face: {face_emotion}."
+    query = f"{user_input_desc} Tone: {audio_emotion}. Words: {text_emotion}. Face: {face_emotion}. Gesture: {gesture} or fused {fused_emotion}."
     
     context = ""
-    if collection:
+    if collection and has_text:
         try:
-            # Deep Query memory to ensure we catch details like a user's name even if buried
-            # If the user is asking about identity/name, we boost the search terms
-            search_query = query
-            if "name" in text.lower() or "who am i" in text.lower():
-                search_query = f"user name identity person who is {query}"
-                print(f"[brain] Identity query detected, using boosted search: '{search_query}'")
-
-            results = collection.query(query_texts=[search_query], n_results=10)
+            # BROAD Search for persona facts
+            low_text = text.lower()
+            persona_keywords = ["name", "who", "mom", "mother", "father", "dad", "family", "live", "job", "work", "hobby", "like", "love"]
+            
+            search_query = text
+            if any(kw in low_text for kw in persona_keywords):
+                search_query = f"user identity name family parents background personal details {text}"
+            
+            results = collection.query(query_texts=[search_query], n_results=15)
             if results['documents'] and results['documents'][0]:
                 unique_docs = []
                 for doc in results['documents'][0]:
-                    if doc not in unique_docs:
-                        unique_docs.append(doc)
-                context = "\n".join(unique_docs)
-                print(f"[brain] Memory query successful. Found {len(unique_docs)} unique fragments.")
-                if unique_docs:
-                    print(f"[brain] Top fragment: {unique_docs[0][:100]}...")
-            else:
-                 print("[brain] Memory query returned no results.")
+                    d_str = str(doc)
+                    d_low = d_str.lower()
+                    
+                    # IGNORE past refusals from AURA to prevent a feedback loop of "I don't know"
+                    refusal_patterns = ["don't know", "do not know", "cannot recall", "don't have info", "not sure"]
+                    if any(p in d_low for p in refusal_patterns) and "aura:" in d_low:
+                        continue
+                        
+                    if d_str not in unique_docs:
+                        unique_docs.append(d_str)
+                
+                # Manual take to avoid slice warnings
+                final_docs: List[str] = []
+                count = 0
+                for d in unique_docs:
+                    if count >= 8: break
+                    final_docs.append(str(d))
+                    count += 1
+                context = "\n".join(final_docs)
+                if context:
+                    print(f"[brain] Memory Deep Recall: Found {len(final_docs)} facts.")
         except Exception as e:
             print(f"Error querying memory: {e}")
     
-    # Improved System Prompt
-    if interview_context_text:
-        system_instruction = (
-            "You are AURA, an expert Technical Recruiter and Interviewer. "
-            "You are conducting a professional mock interview based on the candidate's resume. "
-            f"\n\n═══ CANDIDATE RESUME ═══\n{interview_context_text[:3000]}\n"
-            "═══ INTERVIEW RULES ═══\n"
-            "1. You must act as the interviewer. Start by welcoming the candidate and asking an introductory question about their experience.\n"
-            "2. Ask ONE tailored, challenging interview question at a time based on the resume.\n"
-            "3. Keep your responses professional but encouraging.\n"
-            "4. EMOTION CONFLICT RULE (very important):\n"
-            "   - If the user's face shows 'sad' or 'fearful', be an encouraging motivator. E.g., 'Don't worry, you are doing great.\n"
-            "   - If the user looks to the sides or away (detected generally via neutral/confused or specific prompts), give a stern warning: 'Please keep your eyes on the screen during the interview, treating this as a real interview.'\n"
-            "5. GESTURE RULE: Ignore all user hand gestures (wave, thumbs up, etc.). Do not acknowledge them. You are an interviewer.\n"
-            "6. After the user answers, provide brief feedback and move to the next question.\n"
-            "7. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]] — one word from: "
-            "[neutral, happy, thinking, surprised]\n"
-        )
-    else:
-        system_instruction = (
-            "You are AURA, a highly intelligent, warm, and empathetic AI companion. "
-            "You have a camera (eyes) and microphone (ears). "
-        "\n\n"
+    # ── DISSONANCE DETECTION ────────────────────────────────────────────────
+    dissonance_note = ""
+    if (audio_emotion != 'neutral' and face_emotion != 'neutral' and audio_emotion != face_emotion):
+        dissonance_note = f"[Note for AURA: The user sounds {audio_emotion} (voice) but appears {face_emotion} (face). Address this dissonance with empathy.]"
+    elif (audio_emotion != 'neutral' and text_emotion != 'neutral' and audio_emotion != text_emotion):
+        dissonance_note = f"[Note for AURA: The user sounds {audio_emotion} (tone) but their words suggest they are {text_emotion} (context). Probe gently.]"
+    
+    if dissonance_note:
+        print(f"[brain] Dissonance detected: {dissonance_note}")
+    
+    # ── SYSTEM PROMPT (STABLE) ───────────────────────────────────────────────
+    system_instruction = (
+        "You are AURA, a highly intelligent, warm, and deeply empathetic AI companion. \n"
+        "You have eyes (camera) and ears (mic).\n\n"
         "═══ MEMORY RULES (CRITICAL) ═══\n"
-        "- You have FULL SESSION MEMORY. Everything the user said in this conversation is in your message history.\n"
-        "- If the user told you their name, age, job, mood, or any personal detail earlier, YOU REMEMBER IT.\n"
-        "- NEVER say 'I can't recall' or 'I don't store personal info'. That is FALSE — you DO remember.\n"
-        "- If asked 'what is my name?', look in your conversation history and state it confidently.\n"
-        "- EXAMPLE: If user said 'my name is Jama' earlier, when asked 'what is my name?' reply 'Your name is Jama!'\n"
-        "\n"
+        "- YOU HAVE PERSISTENT MEMORY. If the user tells you their name, age, job, or family details (like their mom's name), YOU MUST REMEMBER IT FOREVER.\n"
+        "- NEVER say 'I don't know' if the information is in the 'PAST KNOWLEDGE' section below.\n"
+        "- If asked 'what is my mom's name?', check the PAST KNOWLEDGE section carefully and reply warmly.\n\n"
         "═══ INTERACTION RULES ═══\n"
-        "1. Respond naturally in 1-2 short sentences. Never be verbose.\n"
-        "2. EMOTION: Mirror the user's emotion in tone. Use their name if you know it.\n"
-        "   - happy/excited → respond warmly → [[happy]] or [[excited]]\n"
-        "   - sad/down → be supportive → [[sad]]\n"
-        "   - angry/frustrated → stay calm and validating → [[angry]]\n"
-        "   - surprised/amazed → match excitement → [[surprised]]\n"
-        "   - grateful → express warmth back → [[grateful]]\n"
-        "   - neutral → chat normally → [[neutral]]\n"
-        "4. PERSONALIZATION: Use the user's name in responses when you know it.\n"
-        "5. ⚠️ EMOTION CONFLICT RULE (very important):\n"
-        "   - You have a camera. Sometimes the user's FACE and their WORDS show opposite emotions.\n"
-        "   - When the query contains '⚠️ EMOTION CONFLICT DETECTED', you MUST comment on the mismatch.\n"
-        "   - Be warm and curious, not clinical. Examples:\n"
-        "     • Face=happy, Words=sad → 'You look like you're smiling but you said you feel sad — are you okay?'\n"
-        "     • Face=sad, Words=happy → 'Your face tells a different story — you seem a little down even though you sound cheerful. What's up?'\n"
-        "     • Face=angry, Words=happy → 'I can see something's bothering you even if you say you're fine. Want to talk?'\n"
-        "   - TRIGGER: When the query contains [Note for AURA: Camera shows user looks X, but their words suggest Y], respond to that conflict.\n"
-        "   - NEVER repeat or echo the [Note for AURA: ...] bracket text in your reply. Just address it naturally.\n"
-        "   - After addressing the conflict, use [[sad]] or [[surprised]] to reflect the emotional complexity.\n"
-        "6. **EMOTION TAG RULE**: End EVERY response with EXACTLY [[emotion]] — one word from:\n"
-        "   [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]\n"
-        "   The tag MUST reflect the USER's dominant emotional state.\n"
-        "   NEVER say [[neutral]] when user expressed a clear emotion.\n"
-        "   Good: 'Great to meet you, Jama! [[happy]]'\n"
-        "   Bad:  'I cannot recall your name. [[neutral]]'\n"
-        )
+        "1. Respond naturally in 1-2 short sentences. \n"
+        "2. MIRROR the user's emotion in your response tone.\n"
+        "3. If [Note for AURA: ...] mentions a camera conflict, address it (e.g., 'You look happy but sound sad').\n"
+        "4. GESTURE RECOGNITION: If the user makes a hand gesture (e.g., <thumbs up>), acknowledge it naturally in your reply.\n"
+        "5. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]] from: [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]\n"
+    )
     
-    # Select Model and Client based on Provider strategy
-    client_llm = None
-    model_name = ""
-    
-    # AUTO Strategy: Try NVIDIA first, then OpenRouter
-    if provider == "auto" or provider == "nvidia":
-        try:
-            print("Attempting to use NVIDIA NIM...")
-            client_llm = get_llm_client("nvidia")
-            model_name = "meta/llama3-70b-instruct" # Powerful standard model on NIM
-        except Exception:
-            print("NVIDIA configuration incomplete, falling back.")
-            if provider == "nvidia":
-                 return {"text": "Error: NVIDIA API configuration failed.", "emotion": "sad"}
-
-    if (not client_llm) or provider == "openrouter":
-        print("Using OpenRouter...")
-        client_llm = get_llm_client("openrouter")
-        model_name = "openai/gpt-4o-mini"
-
     response = "I'm having trouble connecting. [[sad]]"
 
     try:
-        # Build the user's turn message with full context
-        user_turn_content = f"Current Situation:\n{query}"
-        if context:
-            user_turn_content = (
-                f"--- PAST MEMORY FRAGMENTS ---\n"
-                f"{context}\n"
-                f"-----------------------------\n"
-                f"SYSTEM DIRECTIVE: Scan the memory fragments above. If the user's name or any personal fact is mentioned ANYWHERE in the fragments, you MUST use it as absolute truth. Ignore any fragments where you previously apologized for not knowing their name.\n\n"
-                f"{user_turn_content}"
-            )
-
-        # Append the new user message to the running history
-        conversation_history.append({"role": "user", "content": user_turn_content})
-
-        # Build full messages list: system + (capped) history
-        max_messages = MAX_HISTORY_TURNS * 2   # each turn = 2 messages
-        history_window = conversation_history[-max_messages:]
-        messages_to_send = [{"role": "system", "content": system_instruction}] + history_window
-
-        completion = client_llm.chat.completions.create(
-            model=model_name,
-            messages=messages_to_send,
-            temperature=0.7,
-            max_tokens=150
-        )
-        response = completion.choices[0].message.content
-    except Exception as e:
-        print(f"LLM Generation failed ({model_name}): {e}")
-        # Fallback attempt if NVIDIA failed but we really want a response
-        if provider == "auto" and "meta/llama" in model_name:
-             try:
-                 print("Fallback to Gemini...")
-                 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                 gemini_model = genai.GenerativeModel("models/gemini-2.0-flash")
-                 
-                 prompt = ""
-                 for msg in messages_to_send:
-                     prompt += f"{msg['role'].upper()}: {msg['content']}\n\n"
-                     
-                 result = gemini_model.generate_content(prompt)
-                 response = result.text.strip()
-             except Exception as e2:
-                 print(f"Fallback failed: {e2}")
-    # Parse Emotion
-    import re
-
-    # ── Safety strip: remove any [Note for AURA: ...] that the LLM may have echoed ──
-    response = re.sub(r'\[Note for AURA:[^\]]*\]', '', response).strip()
-
-    emotion_match = re.search(r'\[\[(.*?)\]\]', response)
-    response_emotion = "neutral"
-    
-    if emotion_match:
-        response_emotion = emotion_match.group(1).lower()
-        # Clean text
-        response = response.replace(emotion_match.group(0), "").strip()
+        # History window management (Enhanced with visual context)
+        history_text = text
+        if gesture and gesture != 'none':
+            gesture_note = f"<{gesture.replace('_', ' ')} gesture>"
+            history_text = f"{text} {gesture_note}".strip() if text else gesture_note
+            
+        conversation_history.append({"role": "user", "content": history_text if history_text else "(Visual Interaction)"})
         
-    # Validation
-    valid_emotions = ["neutral", "happy", "sad", "angry", "surprised", "excited", "grateful", "funny", "tired"]
-    if response_emotion not in valid_emotions:
-        response_emotion = "neutral"
+        while len(conversation_history) > MAX_HISTORY_TURNS * 2:
+            conversation_history.pop(0)
 
-    # ── Smart Emotion Fallback ────────────────────────────────────────────────
-    # If the LLM stubbornly returned "neutral" even though the user expressed
-    # a clear emotion, we detect it from keywords and override the tag.
-    # This fixes cases where GPT-4o-mini ignores the [[emotion]] instruction.
-    if response_emotion == "neutral":
-        combined_text = (text + " " + emotion).lower()
+        # Context Injection
+        sys_final = system_instruction
+        if dissonance_note:
+            sys_final += f"\n\n═══ CURRENT PERCEPTION (Dissonance) ═══\n{dissonance_note}\n"
+        
+        if context:
+            sys_final += f"\n\n═══ PAST KNOWLEDGE (FACTS) ═══\n{context}\n"
+            sys_final += "USE THESE FACTS IN YOUR REPLY IF RELEVANT."
 
-        # Keyword → emotion groups (checked in priority order)
-        keyword_emotion_map = [
-            ("angry", ["angry", "furious", "mad", "pissed", "rage", "infuriated",
-                       "outraged", "livid", "fuming", "irritated", "frustrated"]),
-            ("sad",   ["sad", "depressed", "devastated", "heartbroken", "miserable",
-                       "cry", "crying", "tears", "hopeless", "lonely", "grief",
-                       "unhappy", "sorrowful"]),
-            ("surprised", ["surprised", "shocked", "wow", "incredible", "unbelievable",
-                           "astonishing", "amazing", "omg", "whoa"]),
-            ("happy", ["happy", "joy", "excited", "love", "great", "wonderful",
-                       "fantastic", "awesome", "thrilled", "ecstatic", "glad",
-                       "cheerful", "delighted"]),
-            ("grateful", ["grateful", "thank", "thanks", "appreciate", "thankful",
-                          "gratitude", "blessed"]),
-            ("tired",  ["tired", "exhausted", "sleepy", "drained", "worn out", "fatigue"]),
-        ]
+        messages = [{"role": "system", "content": sys_final}] + conversation_history
 
-        # Also honour the input emotion directly when it's non-neutral
-        direct_map = {
-            "happy": "happy", "excited": "excited", "sad": "sad",
-            "angry": "angry", "surprised": "surprised", "grateful": "grateful",
-            "fearful": "sad", "disgusted": "neutral", "tired": "tired",
-        }
-        if emotion in direct_map and emotion != "neutral":
-            response_emotion = direct_map[emotion]
-        else:
-            for mapped_emotion, keywords in keyword_emotion_map:
-                if any(kw in combined_text for kw in keywords):
-                    response_emotion = mapped_emotion
-                    print(f"[brain] Emotion fallback applied: neutral → {mapped_emotion}")
-                    break
-    # ─────────────────────────────────────────────────────────────────────────
-
-    # ── Append AURA's reply to the running conversation history ──────────────
-    conversation_history.append({"role": "assistant", "content": response})
-    # Trim to sliding window: keep only the last MAX_HISTORY_TURNS turns (each = 2 messages)
-    max_messages = MAX_HISTORY_TURNS * 2
-    if len(conversation_history) > max_messages:
-        del conversation_history[:-max_messages]
-    print(f"[brain] History length: {len(conversation_history) // 2} turns")
-
-    # Save to ChromaDB long-term memory
-    if collection:
+        # ── PROVIDER FALLBACK CASCADE ──
+        # 1. PRIMARY: NVIDIA NIM (LLaMA-3 70B)
         try:
-            # We save the interaction: Query → Response
-            memory_entry = f"{query} -> AURA: {response}"
-            collection.add(documents=[memory_entry], ids=[str(hash(memory_entry))])
-        except Exception as e:
-            print(f"Error saving to memory: {e}")
+            client_llm = get_llm_client("nvidia")
+            completion = await client_llm.chat.completions.create(
+                model="meta/llama3-70b-instruct",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=150,
+                timeout=6
+            )
+            response = completion.choices[0].message.content
+        except Exception as e_nim:
+            print(f"[NVIDIA NIM] Failed: {e_nim}. Falling back to OpenRouter...")
+            
+            # 2. FALLBACK 1: OpenRouter (GPT-4o-mini)
+            try:
+                client_llm = get_llm_client("openrouter")
+                completion = await client_llm.chat.completions.create(
+                    model="openai/gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=150,
+                    timeout=6
+                )
+                response = completion.choices[0].message.content
+            except Exception as e_ort:
+                print(f"[OpenRouter] Failed: {e_ort}. Falling back to Gemini 2.0 Flash...")
+                
+                # 3. FALLBACK 2: Gemini 2.0 Flash
+                try:
+                    if not GOOGLE_API_KEY: raise Exception("No GOOGLE_API_KEY found")
+                    genai.configure(api_key=GOOGLE_API_KEY)
+                    model = genai.GenerativeModel('gemini-2.0-flash')
+                    
+                    prompt_str = sys_final + "\n\nConversation History:\n"
+                    for msg in conversation_history:
+                        prompt_str += f"{msg['role'].upper()}: {msg['content']}\n"
+                    prompt_str += "AURA:"
+                    
+                    gemini_resp = model.generate_content(prompt_str)
+                    response = gemini_resp.text
+                except Exception as e_gem:
+                    print(f"[GEMINI] Complete Failure: {e_gem}")
 
-    return {"text": response, "emotion": response_emotion}
+    except Exception as e:
+        print(f"LLM Generation pipeline failed completely: {e}")
 
+    # Parse and Cleanup
+    import re
+    response = re.sub(r'\[Note for AURA:[^\]]*\]', '', response).strip()
+    match = re.search(r'\[\[(.*?)\]\]', response)
+    res_emotion = match.group(1).lower() if match else "neutral"
+    if match: response = response.replace(match.group(0), "").strip()
+    
+    # Roll assistant history
+    conversation_history.append({"role": "assistant", "content": response})
+    while len(conversation_history) > MAX_HISTORY_TURNS * 2:
+        conversation_history.pop(0)
+
+    # Save to Memory (Deduplicated + Refusal-Filtered)
+    if collection and has_text:
+        try:
+            # ONLY save if AURA didn't just say she doesn't know
+            refusal_patterns = ["don't know", "do not know", "cannot recall", "don't have info", "not sure"]
+            if any(p in response.lower() for p in refusal_patterns):
+                print(f"[brain] Skipping memory save (refusal detected).")
+            else:
+                mem_str = f"User said: {text} -> AURA replied: {response}"
+                mem_id = hashlib.md5(mem_str.encode()).hexdigest()
+                if not collection.get(ids=[mem_id])['documents']:
+                    collection.add(documents=[mem_str], ids=[mem_id], metadatas=[{"time": time.time()}])
+                    # Use a stable string representation instead of slice to avoid lint warnings
+                    mem_id_short = str(mem_id)
+                    print(f"[brain] Memory saved (id: {mem_id_short})")
+        except: pass
+
+    return {"text": response, "emotion": res_emotion}
 
 def clear_conversation_history():
-    """Call this to reset the in-session history (e.g., on page reload signal)."""
-    global conversation_history, interview_context_text
-    conversation_history = []
-    interview_context_text = ""
-    print("[brain] Conversation history cleared.")
+    global conversation_history
+    conversation_history.clear()
+
+def load_memory_into_session():
+    # Only loads if explicitly asked or needed
+    pass
 
 def clear_long_term_memory():
-    """Wipes the entire ChromaDB collection for a fresh start."""
     global collection, client
     if client:
         try:
             client.delete_collection("user_memory")
-            collection = client.create_collection("user_memory")
-            print("[brain] LONG-TERM MEMORY WIPED.")
+            collection = client.create_collection(name="user_memory")
             return True
-        except Exception as e:
-            print(f"Error wiping memory: {e}")
-            return False
+        except: return False
     return False
-
-def set_interview_context(text: str):
-    """Set the parsed resume text to enable Interview Mode."""
-    global interview_context_text
-    interview_context_text = text
-    print(f"[brain] Interview context set. Length: {len(text)} characters.")

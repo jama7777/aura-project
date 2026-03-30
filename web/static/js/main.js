@@ -1,4 +1,5 @@
-import { Avatar } from './avatar.js?v=14';
+import * as THREE from 'three';
+import { Avatar } from './avatar.js?v=16';
 import { GestureHandler } from './gesture.js';
 import { FaceEmotionDetector } from './face_emotion.js';
 
@@ -9,25 +10,7 @@ let currentEmotion = "off";
 let lastTriggeredEmotion = null;
 let emotionStartTime = 0;
 let emotionCooldown = 0;
-let isInterviewMode = false;
 
-// ── Interview Inattention Tracking ──────────────────────────────────────────────
-// When the user looks away (face disappears from camera) during interview mode,
-// AURA reacts like a professional interviewer after a brief grace period.
-let _interviewNoFaceStart = null;     // timestamp when face was last lost
-const INTERVIEW_INATTENTION_MS = 3000;  // 3s before AURA reacts
-let _interviewInattentionFired = false; // so it only fires once per "look-away" event
-
-// ── Interview Stage State ─────────────────────────────────────────────────
-// 1 = Warm-up (Simple), 2 = Core (Medium), 3 = Deep-dive (Hard), 4 = Expert (Very Hard)
-let interviewStage = 1;
-const INTERVIEW_STAGE_LABELS = [
-    '', // index 0 unused
-    '🟢 Stage 1 — Warm-up (Simple)',
-    '🟡 Stage 2 — Core Skills (Medium)',
-    '🟠 Stage 3 — Deep-dive (Hard)',
-    '🔴 Stage 4 — Expert (Very Hard)'
-];
 
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -47,13 +30,20 @@ let _lockSource = null;    // which input grabbed the lock ('text'|'voice'|'gest
 
 function acquireInputLock(source) {
     if (_inputLocked) {
+        // ── ALLOW CONCURRENCY: Don't block manual inputs if the lock is held by a background emotion ──
+        if ((source === 'text' || source === 'voice') && _lockSource === 'emotion') {
+            log(`[InputLock] 🔓 Manual "${source}" bypassing background "emotion" lock.`);
+            // KEY FIX: Change the lock source to the manual one immediately to prevent double-firing
+            _lockSource = source; 
+            return true;
+        }
+        
         log(`[InputLock] 🔒 Blocked "${source}" — "${_lockSource}" is still processing.`);
         _showBusyHint(source);
         return false;
     }
     _inputLocked = true;
     _lockSource = source;
-    isAuraTalking = true;    // sync legacy flag
     log(`[InputLock] 🔓 Lock acquired by: ${source}`);
     _showProcessingIndicator(source);
     return true;
@@ -121,27 +111,61 @@ function _showBusyHint(source) {
 }
 
 // ── TALKING GUARD ──────────────────────────────────────────────────────────
-// isAuraTalking is kept in sync with InputLock acquire/release automatically.
 let isAuraTalking = false;
-window._setAuraTalking = (v) => { isAuraTalking = v; };  // debug helper
-window._isLocked = () => _inputLocked;                   // debug helper
+let lastSpeechEndTime = 0;
+let currentAbortController = null;
+let interactionQueue = []; // Response queue for sequential interaction
+let lastResponseText = ""; // For duplication filtering
+let lastResponseTime = 0;
+window._setAuraTalking = (v) => { isAuraTalking = v; };
+
+/** Interrupt current speech playback and any pending input lock */
+function stopAuraSpeech() {
+    if (window.currentAudio) {
+        log(`[Interrupt] Stopping active speech singleton.`);
+        window.currentAudio.pause();
+        window.currentAudio.src = ""; // Force stop and cleanup
+        window.currentAudio.onended = null;
+        window.currentAudio.onerror = null;
+        window.currentAudio = null;
+    }
+    isAuraTalking = false;
+    if (window.avatar) {
+        window.avatar.setTalking(false);
+        window.avatar.resetFace();
+    }
+    stopFaceSync();
+}
+
+/** 
+ * Force-release the input lock for a new high-priority interaction 
+ * (like a gesture or emotion acknowledgment during speaking)
+ */
+function interruptInputLock() {
+    if (_inputLocked) {
+        log(`[Interrupt] Force-releasing lock (was: ${_lockSource}) for new interaction.`);
+        _inputLocked = false;
+        _hideProcessingIndicator();
+    }
+}
 
 const gestureHandler = new GestureHandler(avatar, (gesture) => {
     const textInput = document.getElementById('text-input');
     const isTyping = textInput && (document.activeElement === textInput || textInput.value.trim().length > 0);
 
-    // If system is busy (recording, processing, or AURA is talking) OR user is passively typing,
-    // play the animation locally so the avatar still reacts, but DO NOT send a new API request.
-    if (isRecording || _inputLocked || isAuraTalking || isTyping) {
-        log(`[Gesture] System busy or typing — playing animation locally for ${gesture}, skip API call.`);
+    // ── PERCEPTION SUPPRESSION ──────────────────────────────────────────────
+    // If the user or AURA is speaking, only play the animation locally.
+    if (isAuraTalking || isRecording || _inputLocked) {
+        log(`[Gesture] Visual-only mimicry for "${gesture}" while busy.`);
         _playGestureAnimationOnly(gesture);
         
-        // Show toast if voice is actively recording or processing
-        if (isRecording || _lockSource === 'voice') {
-            _showVoiceProcessingToast(gesture);
-        }
+        // KEY FIX: Do not store this gesture for the NEXT AI processing turn.
+        // This ensures the gesture is strictly visual and doesn't load into memory.
+        if (gestureHandler) gestureHandler.lastGesture = "none";
+        
         return;
     }
+    // ────────────────────────────────────────────────────────────────────────
 
     // Normal path: grab lock and send gesture to backend
     if (!acquireInputLock('gesture')) return;
@@ -172,22 +196,31 @@ const gestureHandler = new GestureHandler(avatar, (gesture) => {
  */
 function _playGestureAnimationOnly(gesture) {
     const gestureAnimMap = {
-        wave: 'idle',
-        thumbs_up: 'happy',
-        victory: 'dance',
-        clap: 'clap',
-        dance: 'dance',
-        hug: 'happy',
-        fist: 'idle',
-        open_palm: 'idle',
+        wave:        'cmu_wave',          // ← CMU real wave mocap
+        thumbs_up:   'cmu_expressive2',   // ← CMU expressive
+        victory:     'cmu_dance3',        // ← CMU dance
+        clap:        'clap',
+        dance:       'dance',
+        hug:         'happy',
+        point:       'cmu_gesture',       // ← CMU gesture pointing
+        horns:       'cmu_dance4',        // ← CMU dance 2
+        call_me:     'cmu_wave2',         // ← CMU wave/point
+        thumbs_down: 'sad',
+        ok:          'cmu_expressive1',   // ← CMU expressive
+        iloveyou:    'pray',
+        vulcan:      'cmu_expressive3',   // ← CMU expressive
+        open_palm:   'cmu_wave3'          // ← CMU wave variant
     };
     const anim = gestureAnimMap[gesture] || 'idle';
-    if (avatar && avatar.playAnimation) {
-        avatar.playAnimation(anim, true);
-        // Return to idle after 3 seconds
-        setTimeout(() => {
-            if (avatar && avatar.playAnimation) avatar.playAnimation('idle');
-        }, 3000);
+    if (avatar) {
+        if (avatar.playSequence) {
+            // Priority-1: Better way to play animations while talking — ensures it doesn't get stuck
+            avatar.playSequence([anim], () => {
+                if (avatar.playAnimation) avatar.playAnimation('idle');
+            });
+        } else if (avatar.playAnimation) {
+            avatar.playAnimation(anim, true);
+        }
     }
 }
 
@@ -224,6 +257,42 @@ function _showVoiceProcessingToast(source) {
     }, 2500);
 }
 
+/**
+ * Universal notification toast for UI feedback.
+ */
+function _showNotification(message, color = "#6c5ce7") {
+    let toast = document.getElementById('aura-notification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'aura-notification';
+        toast.style.cssText = [
+            'position:fixed', 'top:20px', 'right:20px',
+            'padding:12px 24px', 'border-radius:12px', 'color:white',
+            'font-weight:600', 'z-index:9999', 'transition:all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+            'box-shadow:0 10px 30px rgba(0,0,0,0.3)', 'font-size:14px', 'display:none', 'opacity:0',
+            'transform:translateY(-20px)'
+        ].join(';');
+        document.body.appendChild(toast);
+    }
+    
+    toast.textContent = message;
+    toast.style.backgroundColor = color;
+    toast.style.display = 'block';
+    
+    // Animate in
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+    });
+
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-20px)';
+        setTimeout(() => toast.style.display = 'none', 400);
+    }, 3000);
+}
+
 // ========== AUDIO RECORDING VARIABLES ==========
 let isRecording = false;        // Track if we're currently recording
 let mediaRecorder = null;       // MediaRecorder instance
@@ -248,16 +317,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    /* 
-    // Clear the server-side conversation history on every fresh page load
-    try {
-        await fetch('/api/clear-history', { method: 'POST' });
-        log('[Session] Conversation history cleared for new session.');
-    } catch (e) {
-        log('[Session] Could not clear history (server may be starting up).');
-    }
-    */
-
     window.onerror = function (message, source, lineno, colno, error) {
         log(`Global Error: ${message} at ${source}:${lineno}`);
     };
@@ -271,52 +330,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     gestureHandler.init();
 
     setupEventListeners();
-
-    // Start Polling for External Commands (e.g. from Chrome Extension)
-    setInterval(pollForUpdates, 1000);
 });
 
-async function pollForUpdates() {
-    try {
-        const res = await fetch('/api/updates');
-        const data = await res.json();
 
-        if (data.text) {
-            log(`External command received: "${data.text.substring(0, 20)}..."`);
-            // Only process external command if no other input is currently active
-            if (!_inputLocked) {
-                acquireInputLock('external');
-                handleResponse(data);
-            } else {
-                log('[pollForUpdates] Skipped — another input is locked.');
-            }
-        }
-    } catch (e) {
-        // Silent fail on polling errors
-    }
-}
 
 // Restore face-api.js model loading (TinyFaceDetector + faceExpressionNet)
 async function loadFaceAPI() {
     log("[FaceEmotion] Loading face-api.js models...");
     try {
-        // NOTE: faceLandmark68TinyNet is required when using TinyFaceDetector.
-        //       faceLandmark68Net is for SSD detector only — wrong model = no landmarks!
+        // NOTE: face-api.js expects these exact names at the root of the URI
         await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
         await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
-        await faceapi.nets.faceLandmark68TinyNet.loadFromUri('/face-models');
-        log("[FaceEmotion] Models loaded from local /face-models ✅");
+        
+        // Landmark 68 Tiny is often missing locally; try local first then fallback
+        try {
+            await faceapi.nets.faceLandmark68TinyNet.loadFromUri('/face-models');
+            log("[FaceEmotion] Models loaded from local /face-models ✅");
+        } catch(le) {
+            log("[FaceEmotion] Landmark model missing locally — pulling from CDN...");
+            const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
+            await faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn);
+            log("[FaceEmotion] Full model suite loaded (Mix of Local + CDN) ✅");
+        }
     } catch (e) {
-        log("[FaceEmotion] Local models not found — trying CDN...");
+        log("[FaceEmotion] Local models incomplete — trying full CDN fallback...");
         try {
             const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
+            // We use individual loads instead of all-at-once to see what fails
             await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
             await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
-            await faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn);
-            log("[FaceEmotion] Models loaded from CDN ✅");
+            
+            // Try landmarks, but it's okay if they fail (head-turn will just be disabled)
+            try {
+                await faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn);
+                log("[FaceEmotion] Landmarks loaded from CDN ✅");
+            } catch(le) {
+                log("[FaceEmotion] ⚠️ Landmark model missing from CDN, head-turn disabled.");
+            }
+            log("[FaceEmotion] Primary models loaded from CDN ✅");
         } catch (err) {
-            console.error('[FaceEmotion] Model load failed:', err);
-            log(`[FaceEmotion] ❌ Could not load models: ${err.message}`);
+            console.error('[FaceEmotion] Model load failed absolutely:', err);
+            log(`[FaceEmotion] ❌ Total Model Failure: ${err.message}`);
         }
     }
 }
@@ -327,34 +381,139 @@ function setupEventListeners() {
     const sendBtn = document.getElementById('send-btn');
     const cameraBtn = document.getElementById('camera-btn');
 
-    // Text Input
-    textInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
+    // ── Live Dynamic Grammar Checking ───────────────────────────────────────
+    let typingTimer;
+    textInput.addEventListener('input', () => {
+        clearTimeout(typingTimer);
+        const autoCorrectEnabled = document.getElementById('auto-correct-cb')?.checked ?? true;
+        if (!autoCorrectEnabled) return;
+
+        const rawText = textInput.value.trim();
+        if (rawText.length < 5) return; // Only check longer phrases
+
+        typingTimer = setTimeout(async () => {
+            // Re-read current value in case user started typing again during async call
+            const currentRaw = textInput.value.trim();
+            if (currentRaw.length < 5 || currentRaw !== rawText) return;
+
+            try {
+                const res = await fetch('/api/correct-text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: currentRaw })
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                if (data.changed && textInput.value.trim() === currentRaw) {
+                    // Update the box!
+                    const start = textInput.selectionStart;
+                    const end = textInput.selectionEnd;
+                    textInput.value = data.corrected;
+                    // Try to restore cursor if possible
+                    textInput.setSelectionRange(start, end);
+                    
+                    // Visual feedback: pulse the sparkle button
+                    const sparkle = document.getElementById('grammar-btn');
+                    if (sparkle) {
+                        sparkle.style.transform = 'scale(1.4)';
+                        setTimeout(() => sparkle.style.transform = 'scale(1)', 400);
+                    }
+                    log(`[LiveFix] "${currentRaw}" → "${data.corrected}"`);
+                }
+            } catch (e) {
+                // Silently skip live errors
+            }
+        }, 2000); // 2 second pause in typing triggers the check
     });
-    sendBtn.addEventListener('click', sendMessage);
+
+    // Text Input — Prevent double submission from Enter + Click
+    textInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            sendMessage();
+        }
+    });
+    sendBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        sendMessage();
+    });
+
+    // Manual Grammar Correction Button
+    const grammarBtn = document.getElementById('grammar-btn');
+    if (grammarBtn) {
+        grammarBtn.addEventListener('click', async () => {
+            const rawText = textInput.value.trim();
+            if (!rawText || rawText.length < 3) return;
+            
+            grammarBtn.textContent = '⏳';
+            grammarBtn.style.pointerEvents = 'none';
+            
+            try {
+                const corr = await correctText(rawText, 'text');
+                if (corr.changed) {
+                    textInput.value = corr.corrected;
+                    showCorrectionBadge(corr.corrections, 'manual');
+                    log(`[ManualCorrection] "${rawText}" → "${corr.corrected}"`);
+                }
+            } catch (e) {
+                log(`[ManualCorrection] Error: ${e.message}`);
+            } finally {
+                grammarBtn.textContent = '✨';
+                grammarBtn.style.pointerEvents = 'auto';
+            }
+        });
+    }
+
+    // Auto-Correct Toggle Tooltip Update
+    const autoCorrectCb = document.getElementById('auto-correct-cb');
+    if (autoCorrectCb) {
+        autoCorrectCb.addEventListener('change', () => {
+            const active = autoCorrectCb.checked;
+            log(`[AutoCorrect] Set to: ${active}`);
+            _showNotification(active ? "Auto-correction enabled" : "Auto-correction disabled", active ? "#6c5ce7" : "#888");
+        });
+    }
 
     // Camera Toggle
     cameraBtn.addEventListener('click', toggleCamera);
 
-    // New Chat (Clear Memory)
+    // New Chat (Clear session only — long-term memory is preserved)
+    // Hold Shift while clicking to get the option to fully wipe ALL memory.
     const newChatBtn = document.getElementById('new-chat-btn');
     if (newChatBtn) {
-        newChatBtn.addEventListener('click', async () => {
-            if (confirm("Clear memory and start a new chat?")) {
-                try {
-                    const res = await fetch('/api/clear-history', { method: 'POST' });
-                    const data = await res.json();
-                    if (data.status === 'success') {
-                        // Clear chat UI
-                        document.getElementById('chat-history').innerHTML = '';
-                        addMessage("✨ Memory fully cleared. How can I help you today?", "aura");
-                        log("[NewChat] Memory wiped and UI reset.");
-                        if (avatar) avatar.playAnimation('happy');
+        newChatBtn.title = 'New Chat (Shift+Click to also erase long-term memory)';
+        newChatBtn.addEventListener('click', async (e) => {
+            const wipeAll = e.shiftKey;
+
+            if (wipeAll) {
+                // SHIFT+Click: ask if they want to erase everything
+                if (!confirm("⚠️ Wipe ALL memory?\n\nThis will permanently erase everything AURA knows about you (name, preferences, past conversations).\n\nClick OK to confirm, or Cancel to keep your memories.")) return;
+            } else {
+                // Normal click: just start a fresh session window
+                if (!confirm("Start a new chat?\n\nAURA will still remember your name and past topics.\n\nTip: Hold Shift while clicking to also erase long-term memory.")) return;
+            }
+
+            try {
+                const endpoint = wipeAll ? '/api/wipe-memory' : '/api/clear-history';
+                const res = await fetch(endpoint, { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    document.getElementById('chat-history').innerHTML = '';
+                    if (wipeAll) {
+                        addMessage("🗑️ All memory wiped. I'm starting completely fresh — nice to meet you!", "aura");
+                        log("[NewChat] Full memory wipe completed.");
+                    } else {
+                        addMessage("✨ New chat started! I still remember you from before. How can I help?", "aura");
+                        log("[NewChat] Session cleared. Long-term memory preserved.");
                     }
-                } catch (e) {
-                    log(`[NewChat] Error clearing memory: ${e.message}`);
-                    alert("Could not clear memory. Please try again.");
+                    if (avatar) avatar.playAnimation('happy');
                 }
+            } catch (err) {
+                log(`[NewChat] Error: ${err.message}`);
+                alert("Could not reset chat. Please try again.");
             }
         });
     }
@@ -368,11 +527,6 @@ function setupEventListeners() {
     const gestureMenu = document.getElementById('gesture-menu');
 
     gestureBtn.addEventListener('click', (e) => {
-        if (isInterviewMode) {
-            log("Gestures are disabled in Interview Mode.");
-            _showBusyHint('Interview Mode (Gestures Disabled)');
-            return;
-        }
         e.stopPropagation();
         gestureMenu.classList.toggle('hidden');
     });
@@ -387,118 +541,68 @@ function setupEventListeners() {
     // Gesture Options
     document.querySelectorAll('.gesture-option-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            if (isInterviewMode) return;
             const gesture = btn.dataset.gesture;
             triggerManualGesture(gesture);
             gestureMenu.classList.add('hidden');
         });
     });
 
-    // Interview Mode
-    const interviewBtn = document.getElementById('interview-btn');
-    const resumeUpload = document.getElementById('resume-upload');
-    if (interviewBtn && resumeUpload) {
-        interviewBtn.addEventListener('click', () => {
-            // Stop other processing if something is going on, or just trigger click
-            if (_inputLocked) {
-                _showBusyHint('interview');
-                return;
+
+
+    // ── Voice Selector Toggle ──────────────────────────────────────────
+    const voiceBtn = document.getElementById('voice-btn');
+    const voiceMenu = document.getElementById('voice-menu');
+
+    if (voiceBtn && voiceMenu) {
+        // Toggle menu on click
+        voiceBtn.onclick = (e) => {
+            e.stopPropagation();
+            voiceMenu.classList.toggle('hidden');
+            log("[UI] Voice menu toggled.");
+        };
+
+        // Close when clicking anywhere else on the document
+        document.addEventListener('click', (e) => {
+            if (!voiceBtn.contains(e.target) && !voiceMenu.contains(e.target)) {
+                voiceMenu.classList.add('hidden');
             }
-            resumeUpload.click();
         });
 
-        resumeUpload.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        // Event Delegation for voice options
+        // This is more robust as it handles buttons even if they were added dynamically
+        voiceMenu.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.voice-option-btn');
+            if (!btn) return;
+            
+            const lang = btn.dataset.lang;
+            const tld = btn.dataset.tld;
+            const name = btn.textContent;
 
-            if (!acquireInputLock('interview')) return;
-
-            log("Uploading resume for Interview Mode...");
-            addMessage("📄 Uploading resume and entering Interview Mode...", 'user');
-
-            const formData = new FormData();
-            formData.append('file', file);
-
+            log(`[VoiceChange] Requesting: ${name} (${lang}, ${tld})`);
+            _showNotification(`Accent set: ${name}`, '#6c5ce7');
+            
             try {
-                const response = await fetch('/api/upload-resume', {
+                const res = await fetch('/api/set-voice', {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lang, tld })
                 });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    isInterviewMode = true;
-                    interviewStage  = 1;   // always start at stage 1
-
-                    if (avatar && avatar.setInterviewMode) {
-                        avatar.setInterviewMode(true);
-                    }
-
-                    // ── Pause gesture recognition immediately ──────────────────
-                    if (gestureHandler && gestureHandler.pause) gestureHandler.pause();
-
-                    // ── Force sitting animation ───────────────────────────────
-                    setTimeout(() => {
-                        if (avatar && avatar.animations && avatar.animations['interview_idle']) {
-                            avatar.playAnimation('interview_idle');
-                        }
-                    }, 300);
-
-                    // ── Show stage selector ──────────────────────────────────
-                    _showInterviewStageUI();
-
-                    addMessage(`Resume received!  Starting ${INTERVIEW_STAGE_LABELS[interviewStage]}. Whenever you're ready, say "Hi AURA" or type a message.`, 'aura');
-                    interviewBtn.style.background = '#27ae60';
-                    interviewBtn.title = 'Interview Mode Active';
-                    log("Interview Mode enabled. Gestures paused.");
-
-                    // ── Auto-start camera ────────────────────────────────────
-                    if (!cameraStream) {
-                        log("[Interview] Auto-starting camera for face emotion detection...");
-                        toggleCamera();
-                    }
-                } else {
-                    addMessage("⚠️ Error: " + (data.detail || data.message), 'aura');
+                const data = await res.json();
+                if (data.status === "success") {
+                    log(`[VoiceChange] Server confirmed: ${data.voice}`);
                 }
-            } catch (error) {
-                console.error("Upload error:", error);
-                addMessage("⚠️ Failed to upload resume.", 'aura');
-            } finally {
-                resumeUpload.value = '';
-                releaseInputLock();
+            } catch (err) {
+                log(`[VoiceChange] Failed: ${err.message}`);
             }
+            
+            voiceMenu.classList.add('hidden');
+            if (avatar) avatar.playAnimation('happy');
         });
-    }
-
-    // ── Avatar Switcher ─────────────────────────────────────────────────
-    const avatarSelect = document.getElementById('avatar-select');
-    if (avatarSelect) {
-        // Populate options from catalog
-        if (avatar && avatar.AVATAR_CATALOG) {
-            avatar.AVATAR_CATALOG.forEach(entry => {
-                const opt = document.createElement('option');
-                opt.value = entry.key;
-                opt.textContent = entry.name;
-                avatarSelect.appendChild(opt);
-            });
-        }
-        avatarSelect.addEventListener('change', () => {
-            const key = avatarSelect.value;
-            log(`[Avatar] Switching to: ${key}`);
-            if (avatar && avatar.switchAvatar) avatar.switchAvatar(key);
-        });
-        // Update selector when avatar finishes loading
-        if (avatar) {
-            avatar.onAvatarSwitched = (key) => {
-                avatarSelect.value = key;
-            };
-        }
     }
 }
 
+
 function triggerManualGesture(gesture) {
-    if (isInterviewMode) return;
     log(`Manual Gesture Triggered: ${gesture}`);
 
     const textInput = document.getElementById('text-input');
@@ -506,7 +610,17 @@ function triggerManualGesture(gesture) {
 
     // If system is busy (recording, processing, or AURA is talking) OR user is typing,
     // play the animation locally so the avatar still reacts, but DO NOT send a new API request.
-    if (isRecording || _inputLocked || isAuraTalking || isTyping) {
+    // Interruption logic: some gestures should stop AURA speech and trigger a new response
+    const interruptionGestures = ['fist', 'thumbs_down', 'stop']; 
+    if (isAuraTalking && interruptionGestures.includes(gesture)) {
+        log(`[Gesture] INTERRUPTION manual gesture detected: ${gesture}`);
+        if (window.currentAudio) {
+            window.currentAudio.pause();
+            window.currentAudio.currentTime = 0;
+            window.currentAudio.dispatchEvent(new Event('ended')); // Clean up
+        }
+        // Fall through to normal path to send to backend
+    } else if (isRecording || _inputLocked || isAuraTalking || isTyping) {
         log(`[Gesture] System busy or typing — playing animation locally for ${gesture}, skip API call.`);
         _playGestureAnimationOnly(gesture);
         
@@ -633,7 +747,14 @@ function showCorrectionBadge(corrections, source = 'text') {
         setTimeout(() => { badge.style.display = 'none'; }, 350);
     }, 3500);
 }
+let lastSendTime = 0;
 async function sendMessage() {
+    // ── DEBOUNCE: Prevent near-simultaneous double-clicks/taps ────────────────
+    const now = Date.now();
+    if (now - lastSendTime < 300) return;
+    lastSendTime = now;
+    // ────────────────────────────────────────────────────────────────────────
+    
     const input = document.getElementById('text-input');
     const rawText = input.value.trim();
     if (!rawText) return;
@@ -649,16 +770,19 @@ async function sendMessage() {
     let displayText = filterBadWords(rawText);
     let sendText   = displayText;  // what actually goes to the LLM
 
-    try {
-        const corr = await correctText(rawText, 'text');
-        if (corr.changed) {
-            sendText    = filterBadWords(corr.corrected);
-            displayText = sendText;  // show corrected version in chat bubble
-            showCorrectionBadge(corr.corrections, 'text');
-            log(`[Correction] Text: "${rawText}" → "${corr.corrected}"`);
+    const autoCorrectEnabled = document.getElementById('auto-correct-cb')?.checked ?? true;
+    if (autoCorrectEnabled) {
+        try {
+            const corr = await correctText(rawText, 'text');
+            if (corr.changed) {
+                sendText    = filterBadWords(corr.corrected);
+                displayText = sendText;  // show corrected version in chat bubble
+                showCorrectionBadge(corr.corrections, 'text');
+                log(`[Correction] Text: "${rawText}" → "${corr.corrected}"`);
+            }
+        } catch (e) {
+            log(`[Correction] Skipped (error): ${e.message}`);
         }
-    } catch (e) {
-        log(`[Correction] Skipped (error): ${e.message}`);
     }
     // ────────────────────────────────────────────────────────────────────────
 
@@ -672,19 +796,31 @@ async function sendMessage() {
         avatar.showEmotion(userEmotion, 0.5, false);
     }
 
-    // ── Inject interview stage context so LLM knows difficulty level ───────────
-    const stageHint = isInterviewMode ? _getInterviewStagePrompt() : '';
-    const finalText = isInterviewMode ? `[${stageHint}] ${sendText}` : sendText;
+    // Interruption logic removed - now we queue sequentially
+    /*
+    if (currentAbortController) {
+        log('[Text] Aborting background request — manual text takes priority.');
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
+    */
+
+    // Create new controller for this text request
+    currentAbortController = new AbortController();
 
     try {
+        const currentGesture = gestureHandler.lastGesture || "none";
+        gestureHandler.lastGesture = "none"; // Clear immediately after consumption
+
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: currentAbortController.signal,
             body: JSON.stringify({
-                text: finalText,
-                emotion: userEmotion,          // from text keywords
-                face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off",   // from camera face detection
-                gesture: gestureHandler.lastGesture || "none"
+                text: sendText,
+                emotion: userEmotion,
+                face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off",
+                gesture: currentGesture
             })
         });
 
@@ -699,103 +835,7 @@ async function sendMessage() {
     }
 }
 
-// ── Interview Stage Helpers ─────────────────────────────────────────────────
-/** Returns a short prompt hint injected into every message during interview mode */
-function _getInterviewStagePrompt() {
-    const hints = [
-        '',
-        'INTERVIEW_STAGE:1_SIMPLE — Ask only warm-up and introductory questions. Keep them simple and encouraging.',
-        'INTERVIEW_STAGE:2_MEDIUM — Ask core technical/behavioral questions at a moderate difficulty level.',
-        'INTERVIEW_STAGE:3_HARD — Ask challenging deep-dive questions requiring in-depth knowledge.',
-        'INTERVIEW_STAGE:4_EXPERT — Ask expert-level questions. Challenge every claim. Probe edge cases and trade-offs.'
-    ];
-    return hints[interviewStage] || hints[1];
-}
 
-/** Create the floating interview stage selector panel */
-function _showInterviewStageUI() {
-    let panel = document.getElementById('interview-stage-panel');
-    if (panel) { panel.style.display = 'flex'; return; }
-
-    panel = document.createElement('div');
-    panel.id = 'interview-stage-panel';
-    panel.style.cssText = [
-        'position:fixed', 'top:16px', 'left:50%', 'transform:translateX(-50%)',
-        'display:flex', 'gap:8px', 'align-items:center',
-        'background:rgba(10,10,20,0.88)', 'border:1px solid rgba(255,255,255,0.15)',
-        'border-radius:40px', 'padding:8px 18px', 'z-index:500',
-        'backdrop-filter:blur(12px)', 'box-shadow:0 4px 24px rgba(0,0,0,0.6)',
-        'pointer-events:auto'
-    ].join(';');
-
-    const label = document.createElement('span');
-    label.style.cssText = 'color:#aaa;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;';
-    label.textContent = 'DIFFICULTY';
-    panel.appendChild(label);
-
-    const stages = [
-        { n: 1, icon: '🟢', title: 'Simple' },
-        { n: 2, icon: '🟡', title: 'Medium' },
-        { n: 3, icon: '🟠', title: 'Hard' },
-        { n: 4, icon: '🔴', title: 'Expert' }
-    ];
-
-    stages.forEach(({ n, icon, title }) => {
-        const btn = document.createElement('button');
-        btn.id = `stage-btn-${n}`;
-        btn.title = title;
-        btn.style.cssText = [
-            'background:none', 'border:2px solid transparent',
-            'color:white', 'font-size:20px', 'cursor:pointer',
-            'border-radius:50%', 'width:38px', 'height:38px',
-            'display:flex', 'align-items:center', 'justify-content:center',
-            'transition:all 0.2s'
-        ].join(';');
-        btn.textContent = icon;
-        btn.addEventListener('click', () => _setInterviewStage(n));
-        panel.appendChild(btn);
-    });
-
-    document.body.appendChild(panel);
-    _setInterviewStage(1);  // highlight stage 1 by default
-}
-
-/** Update the active stage, highlight selected button, show toast */
-function _setInterviewStage(n) {
-    interviewStage = n;
-    log(`[Interview] Stage → ${INTERVIEW_STAGE_LABELS[n]}`);
-
-    for (let i = 1; i <= 4; i++) {
-        const btn = document.getElementById(`stage-btn-${i}`);
-        if (!btn) continue;
-        if (i === n) {
-            btn.style.border = '2px solid #fff';
-            btn.style.background = 'rgba(255,255,255,0.15)';
-            btn.style.transform = 'scale(1.18)';
-        } else {
-            btn.style.border = '2px solid transparent';
-            btn.style.background = 'none';
-            btn.style.transform = 'scale(1)';
-        }
-    }
-    // Light toast — no input lock, panel stays visible always
-    _showStageToast(INTERVIEW_STAGE_LABELS[n]);
-}
-
-/** Animated toast appearing below the stage pill */
-function _showStageToast(label) {
-    let t = document.getElementById('stage-toast');
-    if (!t) {
-        t = document.createElement('div');
-        t.id = 'stage-toast';
-        t.style.cssText = 'position:fixed;top:72px;left:50%;transform:translateX(-50%) translateY(-6px);background:rgba(10,10,20,0.92);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:20px;padding:7px 20px;font-size:13px;font-weight:600;z-index:600;pointer-events:none;transition:opacity .25s,transform .25s;opacity:0;font-family:inherit;';
-        document.body.appendChild(t);
-    }
-    t.textContent = label;
-    requestAnimationFrame(() => { t.style.opacity='1'; t.style.transform='translateX(-50%) translateY(0)'; });
-    clearTimeout(t._h);
-    t._h = setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(-6px)'; }, 2200);
-}
 
 
 
@@ -855,6 +895,10 @@ async function toggleMicrophone() {
  */
 async function startRecording() {
     try {
+        // Slow down other processors before requesting audio to maximize success
+        if (faceDetector) faceDetector.setSlowMode(true);
+        if (gestureHandler) gestureHandler.pause();
+
         // Request microphone access
         log("Requesting microphone access...");
         audioStream = await navigator.mediaDevices.getUserMedia({
@@ -866,7 +910,11 @@ async function startRecording() {
             }
         });
 
-        log("Microphone access granted!");
+        if (!audioStream || audioStream.getAudioTracks().length === 0) {
+            throw new Error("No audio tracks found in stream.");
+        }
+        
+        log("Microphone access granted! Track: " + audioStream.getAudioTracks()[0].label);
 
         // Clear previous recordings
         recordedChunks = [];
@@ -936,9 +984,16 @@ function stopRecording() {
 
     // Stop the microphone stream
     if (audioStream) {
-        audioStream.getTracks().forEach(track => track.stop());
+        audioStream.getTracks().forEach(track => {
+            log(`Stopping mic track: ${track.label}`);
+            track.stop();
+        });
         audioStream = null;
     }
+    
+    // Restore processor speeds
+    if (faceDetector) faceDetector.setSlowMode(false);
+    if (gestureHandler) gestureHandler.resume();
 
     // Show processing state immediately so user knows AURA heard them
     const micBtn = document.getElementById('mic-btn');
@@ -1027,19 +1082,35 @@ async function sendToServerForTranscription(audioBlob) {
     const type = audioBlob.type || 'audio/webm';
     const extension = type.includes('mp4') ? 'mp4' : 'webm';
 
+    const currentGesture = gestureHandler.lastGesture || "none";
+    gestureHandler.lastGesture = "none"; // Clear immediately after consumption
+
     const formData = new FormData();
     formData.append('file', audioBlob, `recording.${extension}`);
     // Include the live face-camera emotion so the server can fuse it with audio emotion
     const faceEmo = typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off";
     formData.append('face_emotion', faceEmo);
-    formData.append('gesture', gestureHandler.lastGesture || "none");
-    log(`[Voice] Sending ${(audioBlob.size / 1024).toFixed(1)}KB (${type}) with face_emotion: ${faceEmo}, gesture: ${formData.get('gesture')}`);
+    formData.append('gesture', currentGesture);
+    log(`[Voice] Sending ${(audioBlob.size / 1024).toFixed(1)}KB (${type}) with face_emotion: ${faceEmo}, gesture: ${currentGesture}`);
+
+    // Interruption logic removed - now we queue sequentially
+    /*
+    if (currentAbortController) {
+        log('[Voice] Aborting background request — manual voice takes priority.');
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
+    */
+    
+    // Create new controller for this voice request
+    currentAbortController = new AbortController();
 
     try {
         log("Sending audio to server...");
         const response = await fetch('/api/audio', {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: currentAbortController.signal
         });
 
         if (!response.ok) {
@@ -1053,16 +1124,19 @@ async function sendToServerForTranscription(audioBlob) {
             let heardText = filterBadWords(data.input_text.trim());
 
             // ── Grammar Correction on Voice Transcript ──
-            try {
-                const corr = await correctText(data.input_text.trim(), 'voice');
-                if (corr.changed) {
-                    heardText = filterBadWords(corr.corrected);
-                    data.input_text = heardText; // Update data so downstream works correctly
-                    showCorrectionBadge(corr.corrections, 'voice');
-                    log(`[VoiceCorrection] "${corr.original}" → "${corr.corrected}"`);
+            const autoCorrectEnabled = document.getElementById('auto-correct-cb')?.checked ?? true;
+            if (autoCorrectEnabled) {
+                try {
+                    const corr = await correctText(data.input_text.trim(), 'voice');
+                    if (corr.changed) {
+                        heardText = filterBadWords(corr.corrected);
+                        data.input_text = heardText; // Update data so downstream works correctly
+                        showCorrectionBadge(corr.corrections, 'voice');
+                        log(`[VoiceCorrection] "${corr.original}" → "${corr.corrected}"`);
+                    }
+                } catch (e) {
+                    log(`[VoiceCorrection] Skipped (error): ${e.message}`);
                 }
-            } catch (e) {
-                log(`[VoiceCorrection] Skipped (error): ${e.message}`);
             }
             // ──────────────────────────────────────────
 
@@ -1095,32 +1169,101 @@ async function sendToServerForTranscription(audioBlob) {
 
 
 function handleResponse(data) {
-    if (data.text && data.text.trim().length > 0) {
-        addMessage(data.text, 'aura');
+    if (!data || !data.text) return;
+
+    // ── LAYER 1: DEDUPLICATION FILTER (5-SECOND WINDOW) ──────────────────────────────
+    // Immediately discard word-for-word identical responses received within 5 seconds.
+    // This must happen BEFORE addMessage() to prevent duplicate bubbles.
+    const now = Date.now();
+    if (data.text === lastResponseText && (now - lastResponseTime < 5000)) {
+        log('[Queue] 🛡️ Blocked identical duplicate response (History Guard).');
+        return;
+    }
+
+    // ── LAYER 2: QUEUE SANITIZATION ──────────────────────────────────────────
+    // If she is already talking, check if this exact text is already waiting in the queue.
+    if (isAuraTalking && data.audio_url) {
+        if (interactionQueue.some(item => item.text === data.text)) {
+            log('[Queue] 🛡️ Discarded duplicate text already waiting in line.');
+            return;
+        }
+
+        if (interactionQueue.length < 3) {
+            log('[Queue] Aura is talking — adding unique response to queue.');
+            interactionQueue.push(data);
+        } else {
+            log('[Queue] ⚠️ Queue full. Discarding overflow.');
+            releaseInputLock();
+        }
+        return;
+    }
+
+    // SUCCESS: This is a fresh, unique response.
+    lastResponseText = data.text;
+    lastResponseTime = now;
+
+    if (data.text.trim().length > 0) {
+        addMessage(data.text, 'aura', data.audio_url, data.face_animation);
     }
 
     // Show the detected emotion on the avatar's face immediately
     const responseEmotion = data.emotion || "neutral";
     log(`Response emotion: ${responseEmotion}`);
 
-    // Transition avatar to the emotion state WITH body animation
-    if (avatar && avatar.transitionToEmotion) {
-        // Enable triggerAnimation (true) so AURA performs emotion-based body language
+    // ── BODY ANIMATION PRIORITY ──────────────────────────────────────────────
+    // Priority: Explicit animation list (from gestures/keywords) -> Generic Emotion
+    if (data.animations && data.animations.length > 0 && avatar) {
+        const animToPlay = data.animations[0];
+        
+        // ── AVOID REDUNDANT RESTARTS ──
+        // Only skip if it's a looping animation (like idle) already playing.
+        // For one-shots (loopOnce=true), we SHOULD allow a restart if the user triggers it again.
+        const isLoopingAlready = avatar.currentAction && 
+                                 avatar.animations[animToPlay] === avatar.currentAction &&
+                                 avatar.currentAction.loop !== THREE.LoopOnce &&
+                                 avatar.currentAction.isRunning();
+
+        if (!isLoopingAlready) {
+            log(`Response animations: ${data.animations.join(', ')}`);
+            const nonIdle = data.animations.filter(a => a !== 'idle');
+            if (nonIdle.length > 0) {
+                if (avatar.playSequence) {
+                    avatar.playSequence(nonIdle, () => {
+                        avatar.playAnimation('idle');
+                    });
+                } else {
+                    avatar.playAnimation(nonIdle[0], true);
+                }
+            } else if (avatar.transitionToEmotion) {
+                avatar.transitionToEmotion(responseEmotion, 400, true);
+            }
+        }
+    } else if (avatar && avatar.transitionToEmotion) {
         avatar.transitionToEmotion(responseEmotion, 400, true);
     }
 
+    if (!data) return;
+
+    // Play Audio (Logic continues below as this response passed all filters)
+
     // Play Audio
     if (data.audio_url) {
+        lastResponseText = data.text; // Ensure we track this for deduplication
+        
+        // Update the last aura message in chat to have this audio URL attached
+        const lastAuraMsg = document.querySelector('.message.aura:last-child');
+        if (lastAuraMsg && !lastAuraMsg.dataset.audio) {
+            lastAuraMsg.dataset.audio = data.audio_url;
+            lastAuraMsg.title = "Click to replay";
+            lastAuraMsg.style.cursor = "pointer";
+        }
         // Clear any queued emotion animations when starting to talk
         if (avatar && avatar.clearEmotionQueue) {
             avatar.clearEmotionQueue();
         }
 
-        // Stop currently playing audio if any
-        if (window.currentAudio) {
-            window.currentAudio.pause();
-            window.currentAudio = null;
-        }
+        // ── SINGLETON AUDIO ENFORCEMENT REMOVED - NOW WE QUEUE ──
+        // (Previously we called stopAuraSpeech() here, now we don't)
 
         log(`Playing audio: ${data.audio_url} `);
         const audio = new Audio(data.audio_url);
@@ -1165,17 +1308,24 @@ function handleResponse(data) {
 
         audio.onended = () => {
             isAuraTalking = false;
-            emotionCooldown = Date.now();
+            lastSpeechEndTime = Date.now(); // Start the lockout period
+            emotionCooldown = Date.now() + 1000; // Extra buffer
             lastTriggeredEmotion = null;
-            log('[Guard] AURA finished talking — inputs re-enabled.');
+            log('[Guard] AURA finished talking — lockout started (2s).');
             avatar.setTalking(false);
             stopFaceSync();
-            avatar.playAnimation('idle');
             window.currentAudio = null;
             _resetMicBtn();
             // ── Release InputLock after audio finishes ──
             releaseInputLock();
             log('Audio playback finished.');
+
+            // ── PROCESS NEXT ITEM IN QUEUE ──
+            if (interactionQueue.length > 0) {
+                log(`[Queue] Playing next response (${interactionQueue.length} left)`);
+                const nextData = interactionQueue.shift();
+                setTimeout(() => handleResponse(nextData), 600); // 0.6s gap for realism
+            }
         };
     } else {
         // No audio payload (e.g., pure visual gesture feedback).
@@ -1331,16 +1481,66 @@ function stopFaceSync() {
 }
 
 
-function addMessage(text, sender) {
+function addMessage(text, type, audioUrl = null, faceAnim = null) {
     const history = document.getElementById('chat-history');
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${sender} `;
-    msgDiv.textContent = text;
-    history.appendChild(msgDiv);
-
-    // Scroll to bottom
     const container = document.getElementById('chat-container');
-    container.scrollTop = container.scrollHeight;
+    if (!history) return;
+
+    const div = document.createElement('div');
+    div.className = `message ${type}`;
+    div.textContent = text;
+    
+    // ── REPLAY FEATURE ──────────────────────────────────────────────────────
+    if (type === 'aura' && audioUrl) {
+        div.dataset.audio = audioUrl;
+        if (faceAnim) div._auraAnim = faceAnim; // Store for replay
+        div.title = "Click to replay";
+        div.style.cursor = "pointer";
+    }
+
+    // Click handler for AURA's messages
+    if (type === 'aura') {
+        div.addEventListener('click', () => {
+            const url = div.dataset.audio;
+            const anim = div._auraAnim;
+            if (url) {
+                log(`[Replay] Clicking to replay: ${url}`);
+                // Replay logic: we treat this like a "Mini Response"
+                // But we don't send to backend, just play the audio & move mouth
+                const replayData = { 
+                    text: div.textContent, 
+                    audio_url: url,
+                    face_animation: anim 
+                };
+                
+                // If she is currently talking, stop her first so user can hear the replay
+                if (isAuraTalking) stopAuraSpeech();
+                
+                handleResponse(replayData);
+            }
+        });
+    }
+
+    history.appendChild(div);
+    
+    // ── STABLE AUTO-SCROLL ──────────────────────────────────────────────────
+    // Use scrollIntoView on the new message for guaranteed accuracy.
+    // Wrap in try-catch to prevent a failing scroll from crashing the entire app.
+    setTimeout(() => {
+        try {
+            if (div && typeof div.scrollIntoView === 'function') {
+                div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                // Standard fallback if scrollIntoView is unavailable
+                const container = document.getElementById('chat-container');
+                if (container) container.scrollTop = container.scrollHeight;
+            }
+        } catch (e) {
+            console.warn("[ScrollFix] Native scroll failed, using fallback:", e);
+            const container = document.getElementById('chat-container');
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+    }, 100);
 }
 
 let cameraStream = null;
@@ -1414,18 +1614,9 @@ function startFaceDetection(video) {
                 emotion.charAt(0).toUpperCase() + emotion.slice(1) + ` (${pct}%)`;
             statusSpan.style.color = emotion === 'neutral' ? '#aaa' : '#00ff88';
 
-            // ── FIX: Show emotion on avatar face AND trigger body animation ──
-            // triggerAnimation=true so face expression changes also play body anims
-            // directly from the camera — no LLM call needed.
-            // If we are in interview mode, restrict certain face emotions from triggering body animations, just pass to LLM
-            let shouldAnimate = !isAuraTalking;
-            if (isInterviewMode && emotion !== 'neutral') {
-                shouldAnimate = false; // Interviewer persona holds face expressions but doesn't do wild body animations
-            }
-
             if (avatar && avatar.showEmotion && emotion !== 'neutral') {
-                avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), shouldAnimate);
-                log(`[FaceEmotion] 🎭 Face→Avatar: ${emotion} (body anim: ${shouldAnimate})`);
+                avatar.showEmotion(emotion, Math.min(confidence * 1.5, 1.0), true);
+                log(`[FaceEmotion] 🎭 Face→Avatar: ${emotion} (body anim: true)`);
             } else if (emotion === 'neutral' && avatar && avatar.showEmotion) {
                 // Smoothly recover face to neutral when no strong emotion is detected
                 avatar.gradualEmotionalRecovery(1500);
@@ -1442,15 +1633,16 @@ function startFaceDetection(video) {
             // won't immediately re-act to an emotion that was building up during
             // the previous response.
             // ╚═══════════════════════════════════════════════════════════════════
-            if (_inputLocked) {
-                // Silently skip: face keeps updating avatar expression, 
-                // but does NOT send to backend while another input is active.
+            // Silently skip AI-processing if she is talking, recording, or thinking.
+            // Visual mimicry (avatar.showEmotion) still happens because it's called above the lockout.
+            const lockoutElapsed = Date.now() - lastSpeechEndTime;
+            if (isAuraTalking || isRecording || _inputLocked || (lockoutElapsed < 1200)) {
                 return;
             }
 
-            if (emotion !== 'neutral' && confidence > 0.20 && (now - emotionCooldown > 4000)) {
+            if (emotion !== 'neutral' && confidence > 0.20 && (now - emotionCooldown > 2500)) {
                 if (emotion === lastTriggeredEmotion) {
-                    if (now - emotionStartTime > 800) {
+                    if (now - emotionStartTime > 700) {
                         log(`[FaceEmotion] Sustained: ${emotion} (${pct}%) → Triggering reaction`);
                         triggerEmotionReaction(emotion);
                         emotionCooldown = now;
@@ -1459,6 +1651,15 @@ function startFaceDetection(video) {
                 } else {
                     lastTriggeredEmotion = emotion;
                     emotionStartTime = now;
+                    
+                    // ── QUICK REACTION FOR EMOTION SHIFT ──
+                    // If the user's emotion CHANGES (e.g. Happy -> Surprised), 
+                    // we trigger a new reaction much faster (after 1s) to feel dynamic.
+                    if (now - emotionCooldown > 1000) {
+                        log(`[FaceEmotion] Sudden Shift Detected: ${emotion} → Instant Reaction`);
+                        triggerEmotionReaction(emotion);
+                        emotionCooldown = now;
+                    }
                 }
             } else if (emotion !== lastTriggeredEmotion) {
                 lastTriggeredEmotion = emotion;
@@ -1476,27 +1677,11 @@ function startFaceDetection(video) {
                 statusSpan.style.color = '#888';
                 _updateEmotionBar(null);
 
-                // ── Interview inattention: track how long face has been gone ──
-                if (isInterviewMode && !_inputLocked) {
-                    const now = Date.now();
-                    if (_interviewNoFaceStart === null) {
-                        _interviewNoFaceStart = now;
-                        _interviewInattentionFired = false;
-                        log('[Interview] Face lost — starting inattention timer...');
-                    } else if (!_interviewInattentionFired &&
-                               (now - _interviewNoFaceStart) >= INTERVIEW_INATTENTION_MS) {
-                        _interviewInattentionFired = true;
-                        _triggerInterviewInattention();
-                    }
-                }
+                // ─ Emotion updated ─
                 return;
             }
 
-            // Face detected — reset inattention timer
-            _interviewNoFaceStart = null;
-            _interviewInattentionFired = false;
-
-            // Green glow when face found
+            // Face detected
             video.style.border = '3px solid #00ff88';
             video.style.boxShadow = '0 0 18px #00cc66';
             _updateEmotionBar(scores);
@@ -1506,53 +1691,6 @@ function startFaceDetection(video) {
     // Start the face-api.js detection loop on the video element
     faceDetector.start(video);
     log('[FaceEmotion] Face emotion detector started ✅');
-
-    // ── Head-turn detection callback (v4) ───────────────────────────────
-    faceDetector.onHeadTurn((direction) => {
-        if (!isInterviewMode || _inputLocked) return;
-
-        log(`[Interview] 🔄 Head turned ${direction} — AURA noticing...`);
-
-        const warnings = [
-            "Please keep your eyes on me — maintaining eye contact shows confidence.",
-            "Try to keep your head straight and face forward during the interview.",
-            "I noticed you looked to the side. In a real interview, focus on your interviewer!",
-            "Head positioning matters! Keep facing forward to make a strong impression.",
-        ];
-        const msg = warnings[Math.floor(Math.random() * warnings.length)];
-
-        if (!acquireInputLock('headturn')) return;
-
-        addMessage(msg, 'aura');
-
-        fetch('/api/animate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: msg, emotion: 'thinking' })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.audio_url) {
-                const audio = new Audio(data.audio_url);
-                window.currentAudio = audio;
-                avatar.setTalking(true);
-                audio.play().catch(() => {});
-                audio.onended = () => {
-                    avatar.setTalking(false);
-                    releaseInputLock();
-                    // Cool-down: reset head-turn state after AURA reacts
-                    setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
-                };
-            } else {
-                releaseInputLock();
-                setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
-            }
-        })
-        .catch(() => {
-            releaseInputLock();
-            setTimeout(() => faceDetector && faceDetector.resetHeadTurn(), 6000);
-        });
-    });
 }
 
 
@@ -1623,6 +1761,14 @@ const FACE_EMOTION_ANIM_MAP = {
     fearful: ['crouch'],       // Crouch
     disgusted: ['sad'],          // Defeated
     excited: ['clap'],         // Clapping
+    point: ['happy'],          // Thinking/Point
+    horns: ['dance'],          // 🤘
+    call_me: ['happy'],        // 🤙
+    thumbs_down: ['sad'],      // 👎
+    ok: ['happy'],             // 👌
+    iloveyou: ['pray'],        // 🤟
+    vulcan: ['jump'],          // 🖖
+    open_palm: ['happy'],      // 🖐️ Open Palm
     neutral: ['idle'],         // Idle
 };
 
@@ -1633,85 +1779,63 @@ const FACE_EMOTION_ANIM_MAP = {
  * This function is left as a lightweight "confirmed emotion" signal only.
  */
 function triggerEmotionReaction(emotion) {
-    log(`[FaceEmotion] ✅ Sustained emotion confirmed: ${emotion}`);
+    log(`[FaceEmotion] ✅ Sending response trigger: ${emotion}`);
 
-    // Just pulse the status bar to show the emotion was confirmed
+    // Pulse the status bar
     const statusSpan = document.getElementById('current-emotion');
     if (statusSpan) {
         const orig = statusSpan.style.color;
-        statusSpan.style.color = '#f9ca24';
+        statusSpan.style.color = '#f9ca24'; // bright gold
         statusSpan.style.fontWeight = 'bold';
         setTimeout(() => {
             statusSpan.style.color = orig;
             statusSpan.style.fontWeight = '';
-        }, 1200);
-    }
-}
-
-// ── Interview Inattention Response ──────────────────────────────────────────────
-/**
- * Called when the user has looked away from the camera for too long
- * during an interview session. AURA reacts like a real interviewer.
- */
-function _triggerInterviewInattention() {
-    if (!isInterviewMode || _inputLocked) return;
-
-    log('[Interview] 👀 Candidate looked away — AURA noticing inattention...');
-
-    // Pick a natural interviewer response at random
-    const reactions = [
-        "I notice you seem a bit distracted — are you still with me?",
-        "Hey, I'm up here! Eye contact is important in an interview.",
-        "It looks like something caught your attention. Shall we continue?",
-        "Just checking in — are you comfortable? Take a moment if you need to.",
-        "In a real interview, maintaining eye contact shows confidence. Let's keep going!"
-    ];
-    const reactionText = reactions[Math.floor(Math.random() * reactions.length)];
-
-    // Show a visual nudge in the status bar
-    const statusSpan = document.getElementById('current-emotion');
-    if (statusSpan) {
-        statusSpan.textContent = '👀 Looked away';
-        statusSpan.style.color = '#ff9f43';
+        }, 1500);
     }
 
-    // Don't acquire lock — just show the message and play TTS via /api/animate
-    // so the interviewer can "call out" the user without a full LLM round-trip
-    if (!acquireInputLock('inattention')) return;
+    // Interruption logic removed - now we queue sequentially
+    /*
+    if (isAuraTalking || _inputLocked) {
+        stopAuraSpeech();
+        interruptInputLock();
+    }
+    */
 
-    addMessage(reactionText, 'aura');
+    // Capture the current camera state as a chat request
+    if (!acquireInputLock('emotion')) return;
 
-    fetch('/api/animate', {
+    const currentGesture = gestureHandler.lastGesture || "none";
+    gestureHandler.lastGesture = "none"; // Clear after use
+
+    // Create a new controller so we can track this request
+    currentAbortController = new AbortController();
+
+    fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: reactionText, emotion: 'thinking' })
+        signal: currentAbortController.signal,
+        body: JSON.stringify({
+            text: "",
+            emotion: "neutral",
+            face_emotion: emotion,
+            gesture: currentGesture
+        })
     })
-    .then(res => res.json())
+    .then(r => r.json())
     .then(data => {
-        if (data.audio_url) {
-            const audio = new Audio(data.audio_url);
-            audio.preload = 'auto';
-            window.currentAudio = audio;
-            avatar.setTalking(true);
-            avatar.transitionToEmotion('thinking', 400, false);
-
-            audio.play().catch(e => log('[Inattention] Audio autoplay blocked: ' + e.message));
-
-            audio.onended = () => {
-                avatar.setTalking(false);
-                releaseInputLock();
-                // Re-enable inattention after a cooldown so AURA doesn't spam
-                setTimeout(() => {
-                    _interviewNoFaceStart = null;
-                    _interviewInattentionFired = false;
-                }, 8000);
-            };
+        currentAbortController = null;
+        handleResponse(data);
+    })
+    .catch(e => {
+        if (e.name === 'AbortError') {
+            log('[FaceEmotion] Request aborted (singleton logic bypassed)');
         } else {
+            log(`[FaceEmotion] Error triggering response: ${e.message}`);
             releaseInputLock();
         }
-    })
-    .catch(err => {
-        log('[Inattention] Error: ' + err.message);
-        releaseInputLock();
+        currentAbortController = null;
     });
 }
+
+// End of AURA Main logic
+

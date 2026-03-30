@@ -134,8 +134,8 @@ class NvidiaACEClient:
                 # It's a message type `EndOfAudio`.
                 yield messages_pb2.AudioWithEmotionStream(end_of_audio=messages_pb2.AudioWithEmotionStream.EndOfAudio())
 
-            # Call API
-            response_stream = self.stub.ProcessAudioStream(request_generator())
+            # Call API with timeout to prevent permanent server freeze on external API hang
+            response_stream = self.stub.ProcessAudioStream(request_generator(), timeout=15.0)
             
             # Process Responses
             animations = []
@@ -164,7 +164,14 @@ class NvidiaACEClient:
                             # Map names to weights
                             for i, name in enumerate(blendshape_names):
                                 if i < len(weights):
-                                    shapes[name] = weights[i]
+                                    val = weights[i]
+                                    
+                                    # DAMPING LOGIC: Reduce extreme mouth spreading
+                                    # Applying 25% damping (0.75 multiplier) to wide-mouth shapes
+                                    if "mouthStretch" in name or "mouthPucker" in name or "mouthFunnel" in name:
+                                        val *= 0.75
+                                        
+                                    shapes[name] = val
                                     
                             frame = {
                                 "time": time_code,

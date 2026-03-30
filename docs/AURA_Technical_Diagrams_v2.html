@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA — Technical Architecture & Visualization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@500;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Mermaid.js for perfect Diagram Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            fontFamily: 'Inter, sans-serif',
+            themeVariables: {
+                fontSize: '20px',
+                fontFamily: 'Inter, sans-serif'
+            },
+            flowchart: { nodeSpacing: 100, rankSpacing: 100 },
+            sequence: { actorMargin: 100, messageMargin: 60, noteMargin: 30 }
+        });
+    </script>
+
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #06b6d4;
+            --accent-tertiary: #10b981;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(148, 163, 184, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        header {
+            padding: 80px 20px;
+            text-align: center;
+            background: radial-gradient(circle at top center, rgba(139, 92, 246, 0.15), transparent 70%);
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 30%, var(--accent-primary) 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            margin: 0 auto;
+            font-weight: 300;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            margin: 60px 0 30px 0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .section-title::before {
+            content: "";
+            display: block;
+            width: 4px;
+            height: 2.5rem;
+            background: var(--accent-primary);
+            border-radius: 2px;
+        }
+
+        .diagram-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 50px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 40px -15px rgba(0, 0, 0, 0.6);
+        }
+
+        .diagram-meta {
+            margin-bottom: 2rem;
+        }
+
+        .diagram-meta h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .diagram-meta p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1.5rem;
+        }
+
+        .badge-purple {
+            background: rgba(139, 92, 246, 0.2);
+            color: #c4b5fd;
+            border: 1px solid rgba(139, 92, 246, 0.4);
+        }
+
+        .badge-cyan {
+            background: rgba(6, 182, 212, 0.2);
+            color: #67e8f9;
+            border: 1px solid rgba(6, 182, 212, 0.4);
+        }
+
+        .badge-green {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .diagram-container {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 16px;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Flexbox Architecture Replacements - Compact for A4 */
+        .arch-diagram { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; max-width: 850px; margin: 0 auto; font-family: 'Inter', sans-serif; color: white; padding: 5px 0; }
+        .arch-box { width: 100%; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; position: relative; }
+        .arch-box-title { font-weight: 600; margin-bottom: 8px; font-size: 1rem; color: rgba(255,255,255,0.9); text-align: center; }
+        .arch-items { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: 100%; }
+        .arch-item { border-radius: 6px; padding: 8px; text-align: center; flex: 1; min-width: 130px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .arch-item h4 { font-weight: 600; margin-bottom: 2px; font-size: 0.85rem; color: #fff; }
+        .arch-item p { font-size: 0.75rem; margin: 0; line-height: 1.2; color: rgba(255,255,255,0.7); }
+        .arch-arrow { display: flex; align-items: center; justify-content: center; position: relative; height: 18px; width: 100%; margin: 2px 0; }
+        .arch-arrow::before { content: ''; position: absolute; height: 100%; width: 1px; background: rgba(255,255,255,0.3); }
+        .arch-arrow::after { content: ''; position: absolute; bottom: 0; width: 5px; height: 5px; border-right: 1px solid rgba(255,255,255,0.3); border-bottom: 1px solid rgba(255,255,255,0.3); transform: rotate(45deg); margin-bottom: -2px; }
+        .arch-arrow label { color: rgba(255,255,255,0.6); font-size: 0.75rem; font-weight: 600; margin-left: 90px; letter-spacing: 0.5px; }
+        
+        .box-front { background: #0d4234; } .item-front { background: #40327d; border: 1px solid #5a4b90; }
+        .box-back { background: #6b3908; } .item-back { background: #85311f; border: 1px solid #a3412e; }
+        .box-ext { background: #104172; } .item-ext1 { background: #2f6922; border: 1px solid #36652b; } .item-ext2 { background: #553b96; border: 1px solid #5b4494; } .item-ext3 { background: #852838; border: 1px solid #853341; } .item-ext4 { background: #0c5a40; border: 1px solid #1a5f48; }
+        .box-mem { background: #4a4a4a; } .item-mem1 { background: #134e8c; border: 1px solid #23558a; } .item-mem2 { background: #0c5a40; border: 1px solid #195f48; }
+        
+        .arrow-right { display: flex; align-items: center; color: rgba(255,255,255,0.5); font-size: 1.2rem; margin: 0 5px; }
+
+        /* Force Mermaid SVGs to be massive */
+        .diagram-container .mermaid {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .diagram-container .mermaid svg {
+            width: 100% !important;
+            max-width: 1100px !important;
+            height: auto !important;
+            min-height: 400px;
+        }
+
+        .diagram-description {
+            color: #cbd5e1;
+            font-size: 1rem;
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 16px;
+            border-left: 4px solid var(--accent-primary);
+            line-height: 1.7;
+        }
+
+        .step-list {
+            margin-top: 0.5rem;
+            padding-left: 1.25rem;
+            list-style: decimal;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="badge badge-purple">Official Technical Guide</div>
+        <h1>AURA Blueprint & UML Schematics</h1>
+        <p class="subtitle">A full technical overview of the Adaptive Universal Responsive Assistant, accurately
+            visualising the deep-learning perception layers, FastAPI routing, and neural reasoning clusters.</p>
+    </header>
+
+    <div class="container">
+
+        <!-- ==================== SECTION: SYSTEM OVERVIEW ==================== -->
+        <h2 class="section-title">System Architecture</h2>
+        <div class="diagram-grid">
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-purple">Architecture</div>
+                    <h3>System Architecture Overview</h3>
+                    <p>End-to-end overview showing how the User, Browser, FastAPI Server, and Cloud AI interact.</p>
+                </div>
+                <div class="diagram-container" style="background: transparent; border: none; padding: 0;">
+                    <div class="arch-diagram">
+                        <div class="arch-box box-front">
+                            <div class="arch-box-title">Browser frontend (main.js + avatar.js)</div>
+                            <div class="arch-items">
+                                <div class="arch-item item-front"><h4>avatar.js</h4><p>Three.js Engine<br/>GLB + Lipsync</p></div>
+                                <div class="arch-item item-front"><h4>Face-API.js</h4><p>class emotion</p></div>
+                                <div class="arch-item item-front"><h4>MediaPipe Hands</h4><p>Gesture detection</p></div>
+                                <div class="arch-item item-front"><h4>Web Audio API</h4><p>VAD · MediaRecorder</p></div>
+                                <div class="arch-item item-front"><h4>main.js</h4><p>Interaction Queue<br/>Lock Management</p></div>
+                            </div>
+                        </div>
+                        
+                        <div class="arch-arrow"><label>HTTP REST</label></div>
+                        
+                        <div class="arch-box box-back">
+                            <div class="arch-box-title">FastAPI backend — server.py + brain.py</div>
+                            <div class="arch-items">
+                                <div class="arch-item item-back"><h4>Audio pipeline</h4><p>Whisper ASR · Wav2Vec</p></div>
+                                <div class="arch-item item-back"><h4>Emotion fusion</h4><p>Audio 0.7 · Text 0.65</p></div>
+                                <div class="arch-item item-back"><h4>Brain · ChromaDB</h4><p>n=10 · cosine · dedup</p></div>
+                                <div class="arch-item item-back"><h4>Output pipeline</h4><p>Google TTS · NVIDIA ACE</p></div>
+                            </div>
+                        </div>
+                    
+                        <div class="arch-arrow"><label>HTTPS · gRPC</label></div>
+                    
+                        <div class="arch-box box-ext">
+                            <div class="arch-box-title">External AI services</div>
+                            <div class="arch-items">
+                                <div class="arch-item item-ext1"><h4>① LLaMA-3 70B NIM</h4><p>PRIMARY</p></div>
+                                <div class="arrow-right">→</div>
+                                <div class="arch-item item-ext3"><h4>② OpenRouter</h4><p>GPT-4o-mini · FALLBACK 1</p></div>
+                                <div class="arrow-right">→</div>
+                                <div class="arch-item item-ext2"><h4>③ Gemini 2.0 Flash</h4><p>FALLBACK 2</p></div>
+                                <div style="flex: 0.2; min-width: 20px;"></div>
+                                <div class="arch-item item-ext4"><h4>NVIDIA ACE</h4><p>Audio2Face-3D gRPC</p></div>
+                            </div>
+                        </div>
+                    
+                        <div style="height: 15px;"></div>
+                    
+                        <div class="arch-box box-mem">
+                            <div class="arch-box-title">Dual-memory system</div>
+                            <div class="arch-items">
+                                <div class="arch-item item-mem1"><h4>Short-term — sliding window</h4><p>Last 20 turns · 40 messages · Reset on "new chat"</p></div>
+                                <div class="arch-item item-mem2"><h4>Long-term — ChromaDB</h4><p>Persistent forever · n=10 + dedup · Injected into every LLM prompt</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Technical Description:</strong> This central architecture diagram accurately positions the
+                    <strong>FastAPI Server</strong> at the heart of the system.
+                    <ul class="step-list">
+                        <li>The <strong>Client</strong> captures microphone and camera signals directly from the user.
+                        </li>
+                        <li>The <strong>Server</strong> orchestrates these signals, blending them into a coherent
+                            emotional context while pulling memory from ChromaDB.</li>
+                        <li>The <strong>Cloud tier</strong> executes deep learning processes (like 70B parameter
+                            inference) that are too heavy for edge processing.</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ==================== SECTION: UML SCHEMATICS ==================== -->
+        <h2 class="section-title">UML Architecture</h2>
+        <div class="diagram-grid">
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-cyan">Audio UML</div>
+                    <h3>Technical Audio Pipeline Sequence</h3>
+                    <p>UML Sequence mapping the exact flow from audio capture to speech synthesis.</p>
+                </div>
+                <div class="diagram-container" style="background: transparent; border: none; padding: 0;">
+                    <div class="arch-diagram">
+                        <div class="arch-box box-front">
+                            <div class="arch-box-title" style="margin-bottom:0;">1. Browser JS (Capture)</div>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 5px;">User Mic Recording → WAV Blob</p>
+                        </div>
+                        
+                        <div class="arch-arrow"><label>POST /api/audio</label></div>
+                        
+                        <div class="arch-box box-back">
+                            <div class="arch-box-title">2. FastAPI Server (Local Processing)</div>
+                            <div class="arch-items">
+                                <div class="arch-item item-back"><h4>Whisper ASR</h4><p>Transcribe</p></div>
+                                <div class="arrow-right">→</div>
+                                <div class="arch-item item-back"><h4>AI Brain</h4><p>Reasoning</p></div>
+                                <div class="arrow-right">→</div>
+                                <div class="arch-item item-back"><h4>Google TTS</h4><p>Synthesize</p></div>
+                            </div>
+                        </div>
+                        
+                        <div class="arch-arrow"><label>HTTP / gRPC</label></div>
+                        
+                        <div class="arch-box box-ext">
+                            <div class="arch-box-title" style="margin-bottom:0;">3. NVIDIA ACE (Cloud GPU)</div>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 5px;">Calculate 52 Blendshape Weights</p>
+                        </div>
+                        
+                        <div class="arch-arrow"><label>JSON Response</label></div>
+                        
+                        <div class="arch-box box-front">
+                            <div class="arch-box-title" style="margin-bottom:0;">4. Browser JS (main.js)</div>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 5px;">Process Queue → Parse JSON → Audio.play()</p>
+                        </div>
+                        
+                        <div class="arch-arrow"><label>Local Hand-off</label></div>
+                        
+                        <div class="arch-box box-front" style="background: #064e3b;">
+                            <div class="arch-box-title" style="margin-bottom:0;">5. Avatar Engine (avatar.js)</div>
+                            <p style="color: rgba(255,255,255,0.7); font-size: 0.85rem; margin-top: 5px;">3D Rendering + LipSync + Body Animation</p>
+                        </div>
+
+                        <div class="arch-arrow"><label>Visual Loop</label></div>
+
+                        <div class="arch-box box-user" style="background: #111827; border: 1px solid rgba(255,255,255,0.1);">
+                            <div class="arch-box-title" style="margin-bottom:0; color: #60a5fa;">6. User Perception</div>
+                            <p style="color: rgba(96,165,250,0.7); font-size: 0.85rem; margin-top: 5px;">Visual/Auditory Emotive Feedback</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Simple Narrative Description:</strong> This UML sequence traces a single vocal interaction
+                    payload.
+                    <ul class="step-list">
+                        <li>The pipeline securely records the audio locally into a bite-sized WAV blob.</li>
+                        <li>The FastAPI backend buffers it and delegates transcription to Whisper.</li>
+                        <li>Once the brain generates a response, Google TTS synthesises the final speech.</li>
+                        <li>Simultaneously, NVIDIA ACE calculates perfect mouth movements for the exact phonetic sound.
+                        </li>
+                        <li>Both the audio and the animation weights are packaged inside one JSON file returned to the
+                            browser.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-green">UML Use Case</div>
+                    <h3>Server-Centric Use Case</h3>
+                    <p>Illustrates all the system actions branching out from the primary User and Server.</p>
+                </div>
+                <div class="diagram-container" style="background: transparent; border: none; padding: 0;">
+                    <div class="arch-diagram" style="flex-direction: row; align-items: stretch; justify-content: center; gap: 10px;">
+                        
+                        <div class="arch-box box-front" style="flex: 1; justify-content: center; padding: 10px;">
+                            <div class="arch-box-title">User</div>
+                            <div class="arch-item item-front" style="width: 100%;"><h4>Human Iteration</h4><p>Edge Device</p></div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; justify-content: space-around; padding: 30px 0 80px 0; color: rgba(255,255,255,0.4); font-size: 1.2rem;">
+                            <div>→</div><div>→</div><div>→</div>
+                        </div>
+
+                        <div class="arch-box box-back" style="flex: 1.5; padding: 15px;">
+                            <div class="arch-box-title">FastAPI Server Boundary</div>
+                            <div class="arch-items" style="flex-direction: column; gap: 6px;">
+                                <div class="arch-item item-back" style="width: 100%;"><h4>Process Audio & Chat</h4></div>
+                                <div class="arch-item item-back" style="width: 100%;"><h4>Fuse Emotion Data</h4></div>
+                                <div class="arch-item item-back" style="width: 100%;"><h4>Recall Memory</h4></div>
+                                <div class="arch-item item-back" style="width: 100%; border: 1px dashed rgba(255,255,255,0.5);"><h4>Generate Avatar JSON</h4></div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 30px; color: rgba(255,255,255,0.4); font-size: 1.2rem;">
+                            <div>←</div>
+                        </div>
+
+                        <div class="arch-box box-ext" style="flex: 1; justify-content: flex-end; padding: 10px;">
+                            <div class="arch-box-title">External</div>
+                            <div class="arch-item item-ext1" style="width: 100%;"><h4>REST Client</h4><p>AaaS API Query</p></div>
+                        </div>
+
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Simple Narrative Description:</strong> This UML Use Case highlights the precise boundaries
+                    of our logic.
+                    <ul class="step-list">
+                        <li>The user interfaces with processing audio, handling emotions, and recalling memories.</li>
+                        <li>All these processes occur safely within the boundary of the FastAPI Server.</li>
+                        <li>An external service can directly request an Avatar sequence (AaaS functionality) without
+                            going through the browser UI.</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ==================== SECTION: PIPELINES ==================== -->
+        <h2 class="section-title">Neural Pipelines</h2>
+        <div class="diagram-grid">
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-purple">Reasoning</div>
+                    <h3>Resilient LLM Cascade</h3>
+                    <p>Hierarchical failover logic ensuring 99.9% uptime.</p>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid">
+                        flowchart TD
+                        Req([Incoming Request]) --> NIM[1. NVIDIA NIM: LLaMA-3 70B]
+
+                        NIM -- Success --> Resp([Response Object Generated])
+                        NIM -- Timeout / 500 Error --> OR[2. OpenRouter: 4o-mini]
+
+                        OR -- Success --> Resp
+                        OR -- Timeout / 500 Error --> Gem[3. Gemini: Flash 2.0]
+
+                        Gem --> Resp
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Technical Description:</strong> This flowchart validates our resilient cascade algorithm.
+                    The logic first attempts inference via <strong>NVIDIA NIM</strong>. If interrupted, the request
+                    transparently proxies to <strong>OpenRouter</strong> and then to <strong>Google Gemini</strong>,
+                    shielding the User from experiencing any "API down" failures.
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-cyan">Perception</div>
+                    <h3>Multimodal Emotion Fusion</h3>
+                    <p>Fusing discrete API signals into one cohesive emotional state.</p>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid">
+                        flowchart LR
+                        A[Vocal Audio] -->|Wav2Vec2 Inference| F((FUSION ALGORITHM))
+                        B[Text Transcript] -->|RoBERTa Inference| F
+                        C[Webcam Image] -->|Face-API.js| F
+
+                        F -->|Threshold Selection| E[Final Empathic State]
+                        F -.->|Conflict Triggered| R[Fallback Prompt injected]
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Technical Description:</strong> Represents the <strong>Triple-Signal Fusion</strong> logic. 
+                    Signals are processed in a strict hierarchical order:
+                    <ul class="step-list">
+                        <li><strong>P1: Audio Tone (Tone-of-Voice)</strong> — Detected via Wav2Vec2. Primary truth.</li>
+                        <li><strong>P2: Text Sentiment (Words)</strong> — Detected via DistilRoBERTa NLP. Secondary truth.</li>
+                        <li><strong>P3: Visual Face (Camera)</strong> — Detected via Face-API.js. Backup signal.</li>
+                    </ul>
+                    If a contradiction is detected (e.g. laughing while saying "I am sad"), the Fusion handler activates local override prompts.
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="diagram-meta">
+                    <div class="badge badge-green">Animation</div>
+                    <h3>Lip-Sync & Damping Flow</h3>
+                    <p>Resolving extreme mouth stretch expressions mathematically.</p>
+                </div>
+                <div class="diagram-container">
+                    <div class="mermaid">
+                        flowchart LR
+                        Audio[/Audio PCM Stream/] --> ACE[NVIDIA ACE Array]
+                        ACE -->|Raw Values 0.0 - 1.0| Filter{0.75x Damping Filter}
+
+                        Filter -->|Pass: Normal Blendshapes| Out[/Rendered 3D Face/]
+                        Filter -->|Modify: Stretch & Pucker| Out
+                    </div>
+                </div>
+                <div class="diagram-description">
+                    <strong>Technical Description:</strong> Visualizes the blendshape attenuation process. Output
+                    weights generated by NVIDIA ACE for `mouthStretch` and `mouthPucker` occasionally distort the
+                    topology. The Server enforces a strict 75% dampening cap to maintain perfect facial structure
+                    irrespective of volume.
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <footer>
+        <p>&copy; 2026 AURA Project. All Blueprints, Flowcharts, and UML Sequences Powered by Mermaid.js for Precision
+            Rendering.</p>
+    </footer>
+
+</body>
+
+</html>

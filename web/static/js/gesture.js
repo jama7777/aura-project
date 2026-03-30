@@ -59,7 +59,12 @@ export class GestureHandler {
     }
 
     async processVideo() {
-        if (!this.isActive) return;
+        if (!this.isActive || this.isPaused) {
+            // If paused (e.g. during voice recording or interview), don't send to MediaPipe.
+            // Check again in 250ms - much slower than the 60fps raf loop.
+            if (this.isActive) setTimeout(() => this.processVideo(), 250);
+            return;
+        }
 
         if (this.videoElement && this.videoElement.readyState >= 2) {
             try {
@@ -94,7 +99,6 @@ export class GestureHandler {
             const now = Date.now();
             if (now - this.gestureCooldown > 2000) { // 2 second cooldown to avoid spam
                 console.log(`Detected Gesture: ${gesture}`);
-                this.triggerAction(gesture);
                 if (this.onGesture) this.onGesture(gesture);
                 this.lastGesture = gesture;
                 this.gestureCooldown = now;
@@ -138,7 +142,49 @@ export class GestureHandler {
             return 'open_palm';
         }
 
-        // 4. Fist (All fingers closed)
+        // 4. Thumbs Down (Thumb open, others closed, thumb pointing DOWN)
+        if (thumbOpen && openFingersCount === 0) {
+            // Check orientation: Thumb tip should be lower than IP (downward)
+            if (landmarks[4].y > landmarks[3].y) {
+                return 'thumbs_down';
+            }
+        }
+
+        // 5. OK Sign (Thumb and Index tips close to each other, others open)
+        const thumbTip = landmarks[4];
+        const indexTip = landmarks[8];
+        const distance = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+        if (distance < 0.05 && middleOpen && ringOpen && pinkyOpen) {
+            return 'ok';
+        }
+
+        // 6. I Love You (Thumb + Index + Pinky open, Middle + Ring closed)
+        if (thumbOpen && indexOpen && pinkyOpen && !middleOpen && !ringOpen) {
+            return 'iloveyou';
+        }
+
+        // 7. Vulcan Salute (Index+Middle together, Ring+Pinky together, gap between)
+        const gapMiddleRing = Math.hypot(landmarks[12].x - landmarks[16].x, landmarks[12].y - landmarks[16].y);
+        if (indexOpen && middleOpen && ringOpen && pinkyOpen && gapMiddleRing > 0.08) {
+            return 'vulcan';
+        }
+
+        // 8. Point (Index only open)
+        if (indexOpen && openFingersCount === 1) {
+            return 'point';
+        }
+
+        // 9. Horns (Index + Pinky open, Middle + Ring closed)
+        if (indexOpen && pinkyOpen && !middleOpen && !ringOpen) {
+            return 'horns';
+        }
+
+        // 10. Call Me (Thumb + Pinky open, Index + Middle + Ring closed)
+        if (thumbOpen && pinkyOpen && !indexOpen && !middleOpen && !ringOpen) {
+            return 'call_me';
+        }
+
+        // 11. Fist (All fingers closed)
         if (!thumbOpen && openFingersCount === 0) {
             return 'fist';
         }
@@ -168,21 +214,5 @@ export class GestureHandler {
         return distTip > distIp;
     }
 
-    triggerAction(gesture) {
-        switch (gesture) {
-            case 'open_palm':
-                this.avatar.playAnimation('clap', true);
-                break;
-            case 'victory':
-                this.avatar.playAnimation('dance', true);
-                break;
-            case 'thumbs_up':
-                this.avatar.playAnimation('happy', true);
-                break;
-            case 'fist':
-                // Maybe stop or idle?
-                this.avatar.playAnimation('idle');
-                break;
-        }
-    }
+
 }

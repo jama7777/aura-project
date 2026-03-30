@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA — Multimodal Workflow Visualization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #020617;
+            --bg-card: #0f172a;
+            --primary: #6366f1;
+            --secondary: #ec4899;
+            --tertiary: #f59e0b;
+            --text-light: #f1f5f9;
+            --text-dim: #94a3b8;
+            --border-glow: rgba(99, 102, 241, 0.2);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            font-family: 'Outfit', sans-serif;
+            padding: 60px 20px;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.1) 0px, transparent 50%);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .header h1 {
+            font-size: 3.5rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: var(--text-dim);
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+        }
+
+        .grid {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 60px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 32px;
+            padding: 50px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+
+        .title-area {
+            margin-bottom: 40px;
+        }
+
+        .title-area h2 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .title-area code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: var(--secondary);
+        }
+
+        svg {
+            width: 100%;
+            height: auto;
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+        }
+
+        .step-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            fill: var(--text-dim);
+        }
+
+        .node-label {
+            font-weight: 600;
+            font-size: 12px;
+            fill: white;
+        }
+
+        @media (max-width: 768px) {
+            padding: 30px 10px;
+            .header h1 { font-size: 2rem; }
+            .chart-card { padding: 30px 15px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <p>AURA V2.4 DATA FLOW</p>
+        <h1>Workflow Engine</h1>
+    </div>
+
+    <div class="grid">
+        
+        <!-- DATA FLOW DIAGRAM: INPUT TO RESPONSE -->
+        <div class="chart-card">
+            <div class="title-area">
+                <h2>End-to-End Multimodal Flow</h2>
+                <code>source: src/main.js & server.py</code>
+            </div>
+            
+            <svg viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#6366f1" />
+                    </marker>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+
+                <!-- Input Stream -->
+                <rect x="20" y="100" width="140" height="250" rx="20" fill="rgba(99, 102, 241, 0.05)" stroke="var(--primary)" stroke-width="1" />
+                <text x="90" y="130" text-anchor="middle" class="node-label">INPUT STREAM</text>
+                
+                <circle cx="90" cy="180" r="25" fill="#1e293b" stroke="var(--primary)" />
+                <text x="90" y="184" text-anchor="middle" font-size="20">🎤</text>
+                <text x="90" y="215" text-anchor="middle" class="step-label">VOICE (WAV)</text>
+
+                <circle cx="90" cy="260" r="25" fill="#1e293b" stroke="var(--secondary)" />
+                <text x="90" y="264" text-anchor="middle" font-size="20">📷</text>
+                <text x="90" y="295" text-anchor="middle" class="step-label">FACE/GESTURE</text>
+
+                <!-- Processing Bridge -->
+                <path d="M170 200 L240 200" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+                
+                <!-- Central Hub -->
+                <rect x="250" y="80" width="200" height="290" rx="24" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.1)" stroke-width="1" />
+                <text x="350" y="110" text-anchor="middle" class="node-label">FASTAPI BACKEND</text>
+
+                <rect x="270" y="140" width="160" height="40" rx="8" fill="#1e293b" stroke="var(--primary)" />
+                <text x="350" y="165" text-anchor="middle" class="node-label" style="font-size: 10px;">WHISPER ASR (TINY)</text>
+
+                <rect x="270" y="200" width="160" height="40" rx="8" fill="#1e293b" stroke="var(--secondary)" />
+                <text x="350" y="225" text-anchor="middle" class="node-label" style="font-size: 10px;">EMOTION FUSION ENGINE</text>
+
+                <rect x="270" y="260" width="160" height="40" rx="8" fill="#1e293b" stroke="var(--tertiary)" />
+                <text x="350" y="285" text-anchor="middle" class="node-label" style="font-size: 10px;">GRAMMAR CORRECTION</text>
+
+                <!-- LLM Path -->
+                <path d="M460 225 L530 225" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+                
+                <rect x="540" y="160" width="150" height="130" rx="20" fill="var(--primary)" filter="url(#glow)" />
+                <text x="615" y="210" text-anchor="middle" class="node-label" style="font-size: 14px;">LLM CORE</text>
+                <text x="615" y="235" text-anchor="middle" class="step-label" style="fill: #e0e7ff; font-size: 8px;">NVIDIA NIM (PRIMARY)</text>
+                <text x="615" y="250" text-anchor="middle" class="step-label" style="fill: #e0e7ff; font-size: 8px;">CHROMADB MEMORY</text>
+
+                <!-- Output -->
+                <path d="M700 225 L770 225" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+
+                <rect x="780" y="100" width="100" height="250" rx="20" fill="rgba(16, 185, 129, 0.05)" stroke="var(--tertiary)" stroke-width="1" />
+                <text x="830" y="130" text-anchor="middle" class="node-label">AVATAR OUTPUT</text>
+
+                <circle cx="830" cy="180" r="20" fill="#1e293b" stroke="var(--tertiary)" />
+                <text x="830" y="184" text-anchor="middle" font-size="16">🔊</text>
+                <text x="830" y="210" text-anchor="middle" class="step-label">GOOGLE TTS</text>
+
+                <circle cx="830" cy="260" r="20" fill="#1e293b" stroke="var(--secondary)" />
+                <text x="830" y="264" text-anchor="middle" font-size="16">👤</text>
+                <text x="830" y="290" text-anchor="middle" class="step-label">LIP SYNC</text>
+
+            </svg>
+        </div>
+
+        <!-- GRAMMAR CORRECTION FLOW -->
+        <div class="chart-card">
+            <div class="title-area">
+                <h2>Hierarchical GEC Pipeline</h2>
+                <code>implementation: src/core/brain.py</code>
+            </div>
+
+            <svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg">
+                <!-- Step 1 -->
+                <rect x="50" y="50" width="150" height="100" rx="16" fill="#1e293b" stroke="var(--text-dim)" />
+                <text x="125" y="90" text-anchor="middle" class="node-label">RAW TRANSCRIPT</text>
+                <text x="125" y="115" text-anchor="middle" class="step-label">"i is feel happy"</text>
+
+                <path d="M210 100 L260 100" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+
+                <!-- Step 2 -->
+                <rect x="270" y="30" width="180" height="140" rx="16" fill="rgba(99, 102, 241, 0.1)" stroke="var(--primary)" />
+                <text x="360" y="65" text-anchor="middle" class="node-label">GPT-4O-MINI (GEC)</text>
+                <text x="360" y="90" text-anchor="middle" class="step-label" style="fill: var(--text-light);">Zero-shot Correction</text>
+                <text x="360" y="110" text-anchor="middle" class="step-label">Latency: ~200ms</text>
+                <text x="360" y="140" text-anchor="middle" class="node-label" style="font-size: 8px; fill: var(--secondary);">HIGH FIDELITY</text>
+
+                <path d="M460 100 L510 100" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+
+                <!-- Step 3 -->
+                <rect x="520" y="50" width="150" height="100" rx="16" fill="#1e293b" stroke="var(--tertiary)" />
+                <text x="595" y="90" text-anchor="middle" class="node-label">CLEAN TEXT</text>
+                <text x="595" y="115" text-anchor="middle" class="step-label">"I am feeling happy."</text>
+
+                <path d="M680 100 L730 100" stroke="var(--primary)" stroke-width="2" marker-end="url(#arrowhead)" />
+
+                <!-- Step 4 -->
+                <rect x="740" y="50" width="120" height="100" rx="16" fill="var(--primary)" />
+                <text x="800" y="90" text-anchor="middle" class="node-label">MAIN LLM</text>
+                <text x="800" y="115" text-anchor="middle" class="step-label" style="fill: white;">Reasoning</text>
+            </svg>
+        </div>
+
+    </div>
+
+    <div style="text-align: center; margin-top: 100px; color: var(--text-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace;">
+        END OF TECHNICAL VISUALIZATION // AURA v2.4 PRO
+    </div>
+
+</body>
+</html>

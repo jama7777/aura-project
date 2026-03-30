@@ -183,7 +183,7 @@ graph TB
   subgraph EXTAI["☁️ External AI Services"]
     NVIDIANIM["NVIDIA NIM\nLlama-3 70B • Priority 1"]
     OPENROUTER["OpenRouter\nGPT-4o-mini • Priority 2"]
-    GEMINI["Google Gemini\ngemini-2.0-flash • Priority 3"]
+    GEMINI["Google OpenRouter\ngpt-4o-mini • Priority 3"]
   end
 
   subgraph NACE["🎭 NVIDIA ACE (gRPC)"]
@@ -386,7 +386,7 @@ sequenceDiagram
   participant PERC as Perception (Whisper/RoBERTa/Wav2Vec)
   participant BRAIN as brain.py
   participant CHROMA as ChromaDB
-  participant LLM as External AI (Gemini/GPT-4o/NIM)
+  participant LLM as External AI (OpenRouter/GPT-4o/NIM)
   participant ACE as NVIDIA ACE (Audio2Face)
   participant AV as avatar.js
 
@@ -429,8 +429,8 @@ sequenceDiagram
   else NVIDIA Fails → OpenRouter fallback
       BRAIN->>LLM: OpenRouter gpt-4o-mini (Priority 2)
       LLM-->>BRAIN: response + [[emotion_tag]]
-  else OpenRouter Fails → Gemini fallback
-      BRAIN->>LLM: Google Gemini 2.0 Flash (Priority 3)
+  else OpenRouter Fails → OpenRouter fallback
+      BRAIN->>LLM: Google OpenRouter (Fallback) (Priority 3)
       LLM-->>BRAIN: response + [[emotion_tag]]
   end
 
@@ -551,7 +551,7 @@ classDiagram
     <<interface>>
     +NVIDIA NIM (Llama-3 70B) Priority 1
     +OpenRouter (GPT-4o-mini) Priority 2
-    +Google Gemini 2.0 Flash Priority 3
+    +Google OpenRouter (Fallback) Priority 3
   }
 
   FastAPIServer --> ChatRequest : uses
@@ -654,7 +654,7 @@ flowchart LR
     QUERY["Query Builder\nuser_input_desc + emotion + face"]
     CTXMEM["Injected Context\nUnique memory snippets"]
     SYSPROMPT["System Prompt\n(Personality + Memory Rules)"]
-    LLM2["LLM Inference\nNVIDIA → OpenRouter → Gemini"]
+    LLM2["LLM Inference\nNVIDIA → OpenRouter → OpenRouter"]
   end
 
   subgraph OUT2["📤 Output Pipeline"]
@@ -731,7 +731,7 @@ graph TB
   subgraph CloudAI["☁️ Cloud AI Services"]
     NVIDIACLOUD["NVIDIA NIM API\nintegrate.api.nvidia.com\nLlama-3 70B · Priority 1"]
     OPENROUTERCLOUD["OpenRouter API\nopenrouter.ai\nGPT-4o-mini · Priority 2"]
-    GEMINICLOUD["Google Gemini API\ngenerativeai\ngemini-2.0-flash · Priority 3"]
+    GEMINICLOUD["Google OpenRouter API\ngenerativeai\ngpt-4o-mini · Priority 3"]
     NACECLOUD["NVIDIA ACE\ngrpc.nvcf.nvidia.com:443\nAudio2Face-3D"]
   end
 
@@ -865,7 +865,7 @@ flowchart TD
 <div class="section">
   <h2>11. LLM Provider Fallback Chain <span class="tag">ARCHITECTURE</span></h2>
   <p class="desc">
-    How the brain module selects and falls back across multiple LLM providers: NVIDIA NIM → OpenRouter → Google Gemini. Every response is saved to ChromaDB after parsing.
+    How the brain module selects and falls back across multiple LLM providers: NVIDIA NIM → OpenRouter → Google OpenRouter. Every response is saved to ChromaDB after parsing.
   </p>
   <div class="mermaid">
 flowchart TD
@@ -875,7 +875,7 @@ flowchart TD
   NV_OK{Success?}
   TRY_OR["Try OpenRouter\nopenai/gpt-4o-mini"]
   OR_OK{Success?}
-  TRY_GEM["Try Google Gemini\ngemini-2.0-flash (Native SDK)"]
+  TRY_GEM["Try Google OpenRouter\ngpt-4o-mini (Native SDK)"]
   GEM_OK{Success?}
   DEFAULT["Return fallback message\n'I'm having trouble connecting.'"]
   PARSE["Parse [[emotion_tag]]\nfrom response text"]
@@ -922,7 +922,7 @@ flowchart TD
 
   subgraph CORRECTION["✏️ Sentence Correction Layer (PLANNED)"]
     DETECT["Error Detector\nSpelling · Grammar · Clarity"]
-    CORR_LLM["Correction LLM Call\ngpt-4o-mini / Gemini Flash\nSystem: 'Fix grammar only'"]
+    CORR_LLM["Correction LLM Call\ngpt-4o-mini / OpenRouter Flash\nSystem: 'Fix grammar only'"]
     DIFF["Diff Engine\nOriginal vs Corrected"]
     SHOW["Show Correction\nUI Banner: 'Did you mean…?'"]
     CONFIRM{"User Confirms\nor Uses Original?"}
@@ -978,7 +978,7 @@ flowchart TD
       <tr><td>📷 Face Emotion</td><td><code>face_emotion.js · face-api.js</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>TinyFaceDetector + faceExpressionNet</td></tr>
       <tr><td>🔀 Emotion Fusion</td><td><code>server.py fuse_emotions()</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>Audio(0.7) + Text(0.65) + Face(0.3)</td></tr>
       <tr><td>👋 Hand Gestures</td><td><code>gesture.js · MediaPipe</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>6 gestures: wave, thumbs_up, victory, clap, dance, hug</td></tr>
-      <tr><td>🧠 LLM Brain</td><td><code>src/core/brain.py</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>NVIDIA NIM → OpenRouter → Gemini fallback</td></tr>
+      <tr><td>🧠 LLM Brain</td><td><code>src/core/brain.py</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>NVIDIA NIM → OpenRouter → OpenRouter fallback</td></tr>
       <tr><td>💾 Long-term Memory</td><td><code>ChromaDB aura_memory.db</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>n_results=15, dedup filter, saves every turn</td></tr>
       <tr><td>🔄 Short-term Memory</td><td><code>brain.py conversation_history[]</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>MAX_HISTORY_TURNS=20 (40 messages)</td></tr>
       <tr><td>🆕 New Chat Button</td><td><code>main.js + server.py /api/clear</code></td><td style="text-align:center;"><span class="badge built">✅ Built</span></td><td>Resets session window ONLY — ChromaDB unchanged</td></tr>
@@ -994,58 +994,56 @@ flowchart TD
 </div>
 
 <!-- ══════════════════════════════════════════ -->
-<!-- 14. AURA MODES: DEFAULT VS INTERVIEW TAKER -->
+<!-- 14. AURA SYSTEM DIAGRAM: SINGLE MODE       -->
 <!-- ══════════════════════════════════════════ -->
 <div class="section">
-  <h2>14. AURA Modes Comparison: Default vs Interview Taker <span class="tag">ARCHITECTURE</span></h2>
+  <h2>14. AURA Single System Architecture <span class="tag">ARCHITECTURE</span></h2>
   <p class="desc">
-    This diagram explicitly details the structural differences and unification points between the 
-    <strong>AURA Default Mode</strong> and the new <strong>Interview Taker Mode</strong>.
+    This diagram explicitly maps out AURA as a unified system without togglable modes. 
+    It captures the streamlined architecture for the dedicated Interview Taker features.
   </p>
   <div class="mermaid">
 flowchart TD
-    classDef defaultMode fill:#6c5ce7,stroke:#fff,stroke-width:2px,color:#fff
-    classDef interviewMode fill:#d63031,stroke:#fff,stroke-width:2px,color:#fff
+    classDef unifiedMode fill:#6c5ce7,stroke:#fff,stroke-width:2px,color:#fff
     classDef input fill:#00b894,stroke:#fff,stroke-width:2px,color:#fff
     classDef brain fill:#e17055,stroke:#fff,stroke-width:2px,color:#fff
     classDef output fill:#0984e3,stroke:#fff,stroke-width:2px,color:#fff
 
-    User((User)):::input
+    User((Candidate User)):::input
     
-    User -- "Casual Chat / Gestures" --> D_Mode[AURA Default Mode]:::defaultMode
-    User -- "Uploads Resume (PDF)" --> I_Mode[Interview Taker Mode]:::interviewMode
+    User -- "Uploads Resume & Chats" --> IN[Unified Inputs]:::unifiedMode
 
     subgraph Perception Layer
         UI("Frontend UI (Camera/Mic)"):::input
-        Whisper("Speech-to-Text (Whisper Base)"):::input
-        Emotion("Voice/Face Emotion Detection (SUPERB)"):::input
+        Whisper("Speech-to-Text (Whisper)"):::input
+        Emotion("Voice/Face Emotion Detection"):::input
+        PdfEng("PDF Resume Extraction"):::input
     end
 
-    D_Mode --> UI
-    I_Mode --> PyPDF["PDF Extraction Engine"]:::input
-    PyPDF --> UI
+    IN --> UI
+    IN --> PdfEng
     
     UI --> Whisper
     UI --> Emotion
     
     subgraph Cognitive Core (Brain)
-        Brain{"AURA Brain (Context Router)"}:::brain
-        Memory[("ChromaDB Context Memory")]:::brain
+        Brain{"Context & Conflict Router"}:::brain
+        Memory[("ChromaDB Semantic Memory")]:::brain
         NIM("NVIDIA NIM (LLaMA-3 70B)"):::brain
-        Gemini("Google Gemini 2.0 (Fallback)"):::brain
+        OpenRouter("Google OpenRouter 2.0 (Fallback)"):::brain
         
         Brain <--> Memory
         Brain <--> NIM
-        NIM -. "Fallback on Error" .-> Gemini
+        NIM -. "Fallback on Error" .-> OpenRouter
     end
 
     Whisper --> Brain
     Emotion --> Brain
-    PyPDF --> Brain
+    PdfEng --> Brain
     
     subgraph Action & Synthesis
         TTS("Text-to-Speech Engine"):::output
-        ACE("NVIDIA Audio2Face (Lip Sync)"):::output
+        ACE("NVIDIA Audio2Face Lip Sync"):::output
         Gesture("Emotion-to-Gesture Logic"):::output
     end
 
@@ -1053,7 +1051,7 @@ flowchart TD
     Brain --> Gesture
     TTS --> ACE
     
-    Avatar["3D Avatar Interface"]:::output
+    Avatar["3D Avatar Interviewer"]:::output
     
     ACE -- "Blendshapes" --> Avatar
     Gesture -- "Body Animations" --> Avatar

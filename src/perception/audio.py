@@ -82,21 +82,25 @@ def transcribe_audio_file(file_path):
                     # Read audio data
                     audio_data = wf.readframes(n_frames)
                     
-                    # Convert to numpy array to check amplitude
-                    if sample_width == 2:  # 16-bit audio
+                    # Convert to numpy array to check amplitude (Handle both 16-bit and 32-bit float)
+                    audio_array = None
+                    if sample_width == 2:
                         audio_array = np.frombuffer(audio_data, dtype=np.int16)
+                        denom = 32768
+                    elif sample_width == 4:
+                        audio_array = np.frombuffer(audio_data, dtype=np.float32)
+                        denom = 1.0
+                    
+                    if audio_array is not None:
                         max_amplitude = np.max(np.abs(audio_array))
                         mean_amplitude = np.mean(np.abs(audio_array))
                         
-                        print(f"Audio Analysis: channels={channels}, sample_rate={framerate}Hz, duration={duration:.2f}s")
-                        print(f"Audio Levels: max_amplitude={max_amplitude}, mean_amplitude={mean_amplitude:.1f}")
-                        print(f"Audio Level %: max={max_amplitude/32768*100:.1f}%, mean={mean_amplitude/32768*100:.2f}%")
+                        print(f"Audio Analysis: channels={channels}, rate={framerate}Hz, duration={duration:.2f}s")
+                        print(f"Audio Levels: max={max_amplitude}, mean={mean_amplitude:.3f}")
+                        print(f"Audio Level %: max={max_amplitude/denom*100:.1f}%, mean={mean_amplitude/denom*100:.2f}%")
                         
-                        # Warning if audio is too quiet
-                        if max_amplitude < 500:
-                            print("WARNING: Audio is extremely quiet! Max amplitude < 500")
-                        elif max_amplitude < 2000:
-                            print("WARNING: Audio is very quiet. Max amplitude < 2000")
+                        if max_amplitude < (denom * 0.015): # < 1.5% of max
+                            print("WARNING: Audio is extremely quiet!")
                     else:
                         print(f"Audio: channels={channels}, sample_width={sample_width}, rate={framerate}, duration={duration:.2f}s")
             except Exception as e:
@@ -110,7 +114,8 @@ def transcribe_audio_file(file_path):
             if text:
                 print(f"Whisper Result: '{text}'")
             else:
-                print("Whisper returned empty text - no speech detected")
+                # Log if it's potentially silent
+                print("Whisper returned empty text - no speech detected (Final Result)")
                 
             return text
         except Exception as e:
@@ -160,4 +165,44 @@ def analyze_emotion_file(file_path):
         except Exception as e:
             print(f"Audio Emotion classification failed: {e}")
             return "neutral"
+    
+    return "neutral"
+
+def analyze_text_sentiment(text: str) -> str:
+    """
+    Analyze the emotional sentiment of a text string (the transcribed speech).
+    Returns AURA core vocabulary: [happy, sad, angry, surprised, neutral]
+    """
+    if not text or len(text.strip()) < 3:
+        return "neutral"
+
+    global text_emotion_classifier
+    if text_emotion_classifier is None:
+        load_text_emotion_model()
+
+    if text_emotion_classifier:
+        try:
+            results = text_emotion_classifier(text)
+            # Result is a list of dicts: [{'label': 'joy', 'score': 0.99}]
+            if results and isinstance(results, list):
+                label = results[0]['label'].lower()
+                score = results[0]['score']
+
+                # Map distilroberta-base-emotion labels to AURA core
+                label_map = {
+                    "joy":      "happy",
+                    "sadness":  "sad",
+                    "anger":    "angry",
+                    "fear":     "sad",
+                    "surprise": "surprised",
+                    "disgust":  "neutral",
+                    "neutral":  "neutral"
+                }
+                mapped = label_map.get(label, "neutral")
+                print(f"[TextEmotion] raw={label} ({score:.2f}) -> mapped={mapped}")
+                return mapped
+        except Exception as e:
+            print(f"Text emotion analysis failed: {e}")
+            return "neutral"
+    
     return "neutral"

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA Mimic Studio - 52 Facial Blendshapes</title>
+    <link rel="stylesheet" href="/static/css/animation_studio.css">
+    <!-- Three.js (same CDN as main AURA app) -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+
+<body>
+    <div class="studio-container">
+        <!-- Header -->
+        <header class="studio-header">
+            <div class="logo">
+                <h1>🎭 AURA Mimic Studio</h1>
+                <p>52 Facial Blendshape Sequencer & Preview Tool</p>
+            </div>
+            <div class="header-controls">
+                <button id="save-project" class="btn-primary">
+                    <span>💾</span> Save Project
+                </button>
+                <button id="load-project" class="btn-secondary">
+                    <span>📂</span> Load Project
+                </button>
+                <button id="export-animation" class="btn-success">
+                    <span>⬇️</span> Export
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="studio-main">
+            <!-- Left Sidebar - Blend Shape Controls -->
+            <aside class="blend-shapes-panel">
+                <div class="panel-header">
+                    <h2>Blend Shapes</h2>
+                    <div class="panel-controls">
+                        <button id="reset-all" class="btn-small">Reset All</button>
+                        <input type="text" id="search-shapes" placeholder="Search shapes...">
+                    </div>
+                </div>
+
+                <div class="shape-categories">
+                    <div class="category">
+                        <button class="category-toggle active" data-category="mouth">
+                            <span class="icon">👄</span> Mouth
+                        </button>
+                        <div class="shape-list" id="mouth-shapes"></div>
+                    </div>
+
+                    <div class="category">
+                        <button class="category-toggle" data-category="eyes">
+                            <span class="icon">👁️</span> Eyes
+                        </button>
+                        <div class="shape-list collapsed" id="eyes-shapes"></div>
+                    </div>
+
+                    <div class="category">
+                        <button class="category-toggle" data-category="brows">
+                            <span class="icon">🤨</span> Brows
+                        </button>
+                        <div class="shape-list collapsed" id="brows-shapes"></div>
+                    </div>
+
+                    <div class="category">
+                        <button class="category-toggle" data-category="jaw">
+                            <span class="icon">🦷</span> Jaw
+                        </button>
+                        <div class="shape-list collapsed" id="jaw-shapes"></div>
+                    </div>
+
+                    <div class="category">
+                        <button class="category-toggle" data-category="nose">
+                            <span class="icon">👃</span> Nose & Cheeks
+                        </button>
+                        <div class="shape-list collapsed" id="nose-shapes"></div>
+                    </div>
+
+                    <div class="category">
+                        <button class="category-toggle" data-category="other">
+                            <span class="icon">✨</span> Other
+                        </button>
+                        <div class="shape-list collapsed" id="other-shapes"></div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Center - 3D Preview -->
+            <section class="preview-section">
+                <div class="preview-header">
+                    <h2>Live Preview</h2>
+                    <div class="preview-controls">
+                        <button id="reset-camera" class="btn-icon" title="Reset Camera">📷</button>
+                        <button id="toggle-grid" class="btn-icon active" title="Toggle Grid">⊞</button>
+                        <button id="toggle-wireframe" class="btn-icon" title="Toggle Wireframe">🔲</button>
+                    </div>
+                </div>
+                <div id="canvas-container" class="canvas-container"></div>
+
+                <!-- Quick Emotion Presets -->
+                <div class="emotion-presets">
+                    <h3>Quick Presets</h3>
+                    <div class="preset-buttons">
+                        <button class="preset-btn" data-emotion="happy">😊 Happy</button>
+                        <button class="preset-btn" data-emotion="sad">😢 Sad</button>
+                        <button class="preset-btn" data-emotion="angry">😠 Angry</button>
+                        <button class="preset-btn" data-emotion="surprised">😲 Surprised</button>
+                        <button class="preset-btn" data-emotion="fear">😨 Fear</button>
+                        <button class="preset-btn" data-emotion="disgust">🤢 Disgust</button>
+                        <button class="preset-btn" data-emotion="neutral">😐 Neutral</button>
+                    </div>
+                    <!-- Demo animations -->
+                    <h3 style="margin-top:12px;">Demo Animations</h3>
+                    <div class="preset-buttons">
+                        <button class="demo-btn" data-demo="talk">🗣️ Talking</button>
+                        <button class="demo-btn" data-demo="blink">😑 Blink</button>
+                        <button class="demo-btn" data-demo="happyToSad">😊➡️😢 Happy→Sad</button>
+                        <button class="demo-btn" data-demo="surprise">😲 Surprise</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Sidebar - Timeline & Keyframes -->
+            <aside class="timeline-panel">
+                <div class="panel-header">
+                    <h2>Timeline & Keyframes</h2>
+                    <div class="timeline-info">
+                        <span id="current-time">0.00s</span> / <span id="total-duration">5.00s</span>
+                    </div>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="playback-controls">
+                    <button id="play-pause" class="btn-icon-large" title="Play/Pause">▶️</button>
+                    <button id="stop" class="btn-icon-large" title="Stop">⏹️</button>
+                    <button id="add-keyframe" class="btn-primary-small" title="Add Keyframe">➕ Add Keyframe</button>
+                </div>
+
+                <!-- Timeline Scrubber -->
+                <div class="timeline-scrubber">
+                    <input type="range" id="timeline-slider" min="0" max="5000" value="0" step="10">
+                    <div class="keyframe-markers" id="keyframe-markers"></div>
+                </div>
+
+                <!-- Keyframe List -->
+                <div class="keyframes-list">
+                    <h3>Keyframes</h3>
+                    <div id="keyframes-container">
+                        <div class="empty-state">
+                            <p>No keyframes yet</p>
+                            <small>Click "Add Keyframe" to start animating</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Animation Settings -->
+                <div class="animation-settings">
+                    <h3>Animation Settings</h3>
+                    <div class="setting-row">
+                        <label>Duration (seconds):</label>
+                        <input type="number" id="duration-input" value="5" min="1" max="60" step="0.5">
+                    </div>
+                    <div class="setting-row">
+                        <label>Loop Animation:</label>
+                        <input type="checkbox" id="loop-checkbox" checked>
+                    </div>
+                    <div class="setting-row">
+                        <label>FPS:</label>
+                        <select id="fps-select">
+                            <option value="24">24 FPS</option>
+                            <option value="30" selected>30 FPS</option>
+                            <option value="60">60 FPS</option>
+                        </select>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Bottom Status Bar -->
+        <footer class="status-bar">
+            <div class="status-left">
+                <span id="avatar-status">⏳ Loading avatar...</span>
+                <span id="shapes-count">0 blend shapes available</span>
+            </div>
+            <div class="status-right">
+                <span id="selection-info">No keyframe selected</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Hidden File Input -->
+    <input type="file" id="file-input" accept=".json" style="display: none;">
+    <input type="file" id="character-upload" accept=".glb,.gltf,.fbx,.obj" style="display: none;">
+
+    <script type="module" src="/static/js/animation_studio.js"></script>
+</body>
+
+</html>

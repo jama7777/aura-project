@@ -38,6 +38,8 @@ export class FaceEmotionDetector {
         this._headTurnStart = null;   // timestamp turn began
         this._headTurnFired = false;  // throttle: only fire once per turn
         this._headTurnDir = null;     // 'left' | 'right' | null
+        this._isPaused = false;       // v4.1: pause entirely
+        this._isSlowMode = false;     // v4.1: throttle for performance (e.g. while recording)
     }
 
     /** Set callback for sustained-emotion events: cb(emotion, confidence, scores) */
@@ -58,6 +60,13 @@ export class FaceEmotionDetector {
         this._headTurnFired = false;
         this._headTurnDir = null;
     }
+
+    /** v4.1: Pause detection to save CPU */
+    pause() { this._isPaused = true; }
+    /** v4.1: Resume detection */
+    resume() { this._isPaused = false; this._schedule(); }
+    /** v4.1: Slow down detection frequency (e.g. to 2fps) for performance */
+    setSlowMode(on) { this._isSlowMode = on; }
 
     /**
      * Start detection loop on a <video> element.
@@ -82,7 +91,12 @@ export class FaceEmotionDetector {
 
     // ─── Internal loop ─────────────────────────────────────────────────────────
     _schedule() {
-        this._timer = setTimeout(() => this._detect(), 60);  // ~16 fps
+        if (!this.ready) return;
+        if (this._timer) clearTimeout(this._timer);
+        
+        // If recording active, we slow way down to save CPU for the audio processing
+        const delay = this._isSlowMode ? 500 : 75; 
+        this._timer = setTimeout(() => this._detect(), delay);
     }
 
     async _detect() {
@@ -100,17 +114,24 @@ export class FaceEmotionDetector {
                 scoreThreshold: 0.25
             });
 
-            // v4: Request landmarks so we can detect head-turn
-            // IMPORTANT: use useTinyModel=true to match TinyFaceDetector
-            const det = await faceapi
-                .detectSingleFace(v, opts)
-                .withFaceLandmarks(true)      // true = use faceLandmark68TinyNet
-                .withFaceExpressions();
+            // v4.1: If landmarker model failed to load, we skip it and just do expressions.
+            // This prevents a crash loop when model files are missing.
+            let task = faceapi.detectSingleFace(v, opts);
+            
+            const hasLandmarks = faceapi.nets.faceLandmark68TinyNet.isLoaded || faceapi.nets.faceLandmark68Net.isLoaded;
+            
+            if (hasLandmarks) {
+                task = task.withFaceLandmarks(true);
+            }
+            
+            const det = await task.withFaceExpressions();
 
             if (det) {
                 this._frameCount++;
                 this._processDetection(det.expressions);
-                this._processHeadTurn(det.landmarks);
+                if (hasLandmarks && det.landmarks) {
+                    this._processHeadTurn(det.landmarks);
+                }
             } else {
                 // No face found
                 this._pushLabel('neutral', 0);
