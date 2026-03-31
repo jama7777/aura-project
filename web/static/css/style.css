@@ -100,7 +100,8 @@ html {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    pointer-events: auto;
+    /* Let clicks pass through the container itself — only messages are clickable */
+    pointer-events: none;
     z-index: 500;
     scroll-behavior: smooth;
     background: transparent;
@@ -111,7 +112,8 @@ html {
     flex-direction: column;
     gap: 12px;
     padding-bottom: 20px;
-    pointer-events: auto;
+    /* Messages themselves are still interactive */
+    pointer-events: none;
 }
 
 #chat-container::-webkit-scrollbar {
@@ -181,7 +183,7 @@ html {
     padding: 14px 20px;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 60%, transparent);
     pointer-events: auto;
-    z-index: 4;
+    z-index: 2000;
 }
 
 .control-btn {
@@ -353,6 +355,21 @@ input:checked + .slider:before {
     display: none !important;
 }
 
+/* ── Gesture & Voice Wrapper — must sit above chat container ───────────── */
+.gesture-control-wrapper,
+.voice-control-wrapper {
+    position: relative;
+    pointer-events: auto;
+    z-index: 3000;   /* above #controls (2000) and #chat-container (500) */
+}
+
+/* Popup menus — always on top of everything */
+#gesture-menu,
+#voice-menu {
+    z-index: 9999 !important;
+    pointer-events: auto !important;
+}
+
 /* Gesture & Voice Menu Buttons */
 .gesture-option-btn, .voice-option-btn {
     background: transparent;
@@ -368,6 +385,9 @@ input:checked + .slider:before {
     display: flex;
     align-items: center;
     gap: 8px;
+    pointer-events: auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .gesture-option-btn:hover, .voice-option-btn:hover {

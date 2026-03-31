@@ -29,6 +29,9 @@ export class Avatar {
         // Emotional recovery
         this._recoveryId = 0;
 
+        // Round-robin tracker: { emotionKey: currentIndex }
+        // Ensures the same animation isn't picked twice in a row for the same emotion
+        this._emotionAnimCounter = {};
 
         // Dynamic Idle configuration
         this.defaultIdleAnimation = 'idle';
@@ -475,18 +478,35 @@ export class Avatar {
     loadFBXAnimations() {
         // ── Mixamo animations (high-quality rigged clips) ────────────────────
         const animationMap = {
-            'idle': 'Catwalk Idle To Twist R.fbx',
-            'happy': 'Sitting Laughing.fbx',
-            'dance': 'Hip Hop Dancing.fbx',
-            'dance2': 'Hip Hop Dancing-2.fbx',
-            'clap': 'Clapping.fbx',
-            'jump': 'Jumping Down.fbx',
-            'sad': 'Defeated.fbx',
-            'pray': 'Praying.fbx',
-            'crouch': 'Crouch To Stand.fbx',
-            'hug': 'Sitting Laughing.fbx',
-            'angry': 'Defeated.fbx',
-            'walk_turn': 'Catwalk Walk Turn 180 Tight.fbx',
+            // ── Core / Idle ──────────────────────────────────────────────────
+            'idle':          'Catwalk Idle To Twist R.fbx',
+            'walk_turn':     'Catwalk Walk Turn 180 Tight.fbx',
+            'walk_turn2':    'Catwalk Walk Turn 180 Tight-2.fbx',
+            'jog':           'Jog In Circle.fbx',
+            'talking':       'Talking.fbx',
+
+            // ── Happy / Excited ──────────────────────────────────────────────
+            'happy':         'Happy.fbx',
+            'dance':         'Hip Hop Dancing.fbx',
+            'dance2':        'Hip Hop Dancing-2.fbx',
+            'clap':          'Clapping.fbx',
+            'greet':         'Standing Greeting.fbx',
+            'crouch':        'Crouch To Stand.fbx',
+
+            // ── Sad / Defeated ───────────────────────────────────────────────
+            'sad':           'Defeated.fbx',
+            'hug':           'Sitting Laughing.fbx',
+            'pray':          'Praying.fbx',
+
+            // ── Angry / Fight ────────────────────────────────────────────────
+            'angry':         'Angry.fbx',
+            'fight':         'Standing Idle To Fight Idle.fbx',
+            'taunt':         'Taunt.fbx',
+
+            // ── Jump / Surprise ──────────────────────────────────────────────
+            'jump':          'Jumping Down.fbx',
+
+            // (CMU Mo-Cap animations removed. We use only high-quality Mixamo clips.)
         };
 
         const fbxLoader = new FBXLoader();
@@ -1204,43 +1224,144 @@ export class Avatar {
     }
 
     /**
-     * Map emotions to appropriate body animations
-     * Creates a rich, varied response by selecting animations that match the emotion
+     * Map emotions to appropriate body animations.
+     * Uses a ROUND-ROBIN strategy so the same animation never plays twice in a row
+     * for the same emotion — every trigger picks the NEXT clip in the pool.
+     *
+     * Pool structure:
+     *   emotionAnimationMap[emotion][level] = [ ...animKey, ...animKey ]
+     *
+     * All animation keys must exist in the animationMap inside loadFBXAnimations().
      */
     getAnimationForEmotion(emotion, intensity = 1.0) {
-        // Emotion to animation mapping
+        // ── Emotion → Animation pool mapping ──────────────────────────────────
+        // Each emotion has a DISTINCT pool per intensity level.
+        // Keys must match what's registered in loadFBXAnimations().
         const emotionAnimationMap = {
-            'happy': { high: ['dance', 'clap'], medium: ['happy'], low: ['happy'] },
-            'sad': { high: ['sad'], medium: ['sad'], low: ['sad'] },
-            'angry': { high: ['sad'], medium: ['sad'], low: ['sad'] },
-            'surprised': { high: ['jump'], medium: ['jump'], low: ['jump'] },
-            'excited': { high: ['dance', 'jump'], medium: ['clap'], low: ['clap'] },
-            'grateful': { high: ['pray', 'clap'], medium: ['pray'], low: ['pray'] },
-            'love': { high: ['pray', 'happy'], medium: ['happy'], low: ['happy'] },
-            'neutral': { high: ['idle'], medium: ['idle'], low: ['idle'] }
+            // ── HAPPY / JOY ───────────────────────────────────────────────────
+            'happy': {
+                high:   ['dance', 'dance2', 'jump'],
+                medium: ['happy', 'clap'],
+                low:    ['greet', 'happy'],
+            },
+            'joy': {
+                high:   ['dance2', 'dance', 'jump'],
+                medium: ['clap', 'happy'],
+                low:    ['greet', 'happy'],
+            },
+
+            // ── EXCITED ───────────────────────────────────────────────────────
+            'excited': {
+                high:   ['dance', 'jog', 'jump'],
+                medium: ['clap', 'walk_turn'],
+                low:    ['happy'],
+            },
+
+            // ── SAD / DEFEATED ────────────────────────────────────────────────
+            'sad': {
+                high:   ['sad', 'pray', 'crouch'],
+                medium: ['sad'],
+                low:    ['sad'],
+            },
+
+            // ── ANGRY / FIGHT ─────────────────────────────────────────────────
+            'angry': {
+                high:   ['angry', 'fight', 'taunt'],
+                medium: ['angry', 'taunt'],
+                low:    ['taunt'],
+            },
+
+            // ── SURPRISED ─────────────────────────────────────────────────────
+            'surprised': {
+                high:   ['jump', 'crouch'],
+                medium: ['jump', 'walk_turn'],
+                low:    ['walk_turn2'],
+            },
+
+            // ── GRATEFUL ──────────────────────────────────────────────────────
+            'grateful': {
+                high:   ['pray', 'hug', 'clap'],
+                medium: ['pray', 'greet'],
+                low:    ['greet'],
+            },
+
+            // ── LOVE ──────────────────────────────────────────────────────────
+            'love': {
+                high:   ['hug', 'happy', 'pray'],
+                medium: ['hug', 'greet'],
+                low:    ['greet'],
+            },
+
+            // ── THINKING / CONFUSED ───────────────────────────────────────────
+            'thinking': {
+                high:   ['talking', 'walk_turn2'],
+                medium: ['talking', 'walk_turn'],
+                low:    ['talking', 'idle'],
+            },
+            'confused': {
+                high:   ['talking', 'walk_turn'],
+                medium: ['talking', 'walk_turn2'],
+                low:    ['idle'],
+            },
+
+            // ── FEAR / SCARED ─────────────────────────────────────────────────
+            'fear': {
+                high:   ['jog', 'jump', 'crouch'],
+                medium: ['jog', 'crouch'],
+                low:    ['walk_turn', 'sad'],
+            },
+
+            // ── NEUTRAL / IDLE ────────────────────────────────────────────────
+            'neutral': {
+                high:   ['idle', 'walk_turn'],
+                medium: ['idle'],
+                low:    ['idle'],
+            },
         };
 
-        // Determine intensity level
+        // ── Determine intensity level ──────────────────────────────────────────
         let level = 'low';
-        if (intensity >= 0.7) {
-            level = 'high';
-        } else if (intensity >= 0.4) {
-            level = 'medium';
-        }
+        if (intensity >= 0.7)      level = 'high';
+        else if (intensity >= 0.4) level = 'medium';
 
-        // Get animations for this emotion
-        const emotionData = emotionAnimationMap[emotion.toLowerCase()];
+        // ── Resolve emotion key (normalise aliases) ────────────────────────────
+        const alias = {
+            'depressed': 'sad', 'unhappy': 'sad', 'grief': 'sad',
+            'furious': 'angry', 'frustrated': 'angry', 'irritated': 'angry',
+            'elated': 'excited', 'energetic': 'excited',
+            'thankful': 'grateful', 'appreciative': 'grateful',
+            'shocked': 'surprised', 'astonished': 'surprised',
+            'scared': 'fear', 'anxious': 'fear',
+            'affectionate': 'love', 'caring': 'love',
+            'pondering': 'thinking', 'curious': 'thinking',
+        };
+        const emotionKey = alias[emotion.toLowerCase()] ?? emotion.toLowerCase();
+
+        const emotionData = emotionAnimationMap[emotionKey];
         if (!emotionData) {
             this.log(`No animation mapping for emotion: ${emotion}, using neutral`);
             return 'idle';
         }
 
-        const animationOptions = emotionData[level] || emotionData.medium || emotionData.low;
+        // ── Build the candidate pool (filter to only loaded animations) ────────
+        const rawPool = emotionData[level] || emotionData.medium || emotionData.low || ['idle'];
+        const pool = rawPool.filter(name => !!this.animations[name]);
+        if (pool.length === 0) {
+            this.log(`No loaded animations available for ${emotion}/${level}, falling back to idle`);
+            return 'idle';
+        }
 
-        // Pick a random animation from the options
-        const selectedAnimation = animationOptions[Math.floor(Math.random() * animationOptions.length)];
+        // ── Round-robin: advance the counter for this emotion+level ───────────
+        const counterKey = `${emotionKey}_${level}`;
+        if (this._emotionAnimCounter[counterKey] === undefined) {
+            this._emotionAnimCounter[counterKey] = 0;
+        } else {
+            this._emotionAnimCounter[counterKey] =
+                (this._emotionAnimCounter[counterKey] + 1) % pool.length;
+        }
+        const selectedAnimation = pool[this._emotionAnimCounter[counterKey]];
 
-        this.log(`Emotion: ${emotion} (${intensity.toFixed(2)}) -> Level: ${level} -> Animation: ${selectedAnimation}`);
+        this.log(`🎭 Emotion: ${emotion} (${intensity.toFixed(2)}) | Level: ${level} | Pool: [${pool.join(', ')}] | Picked: ${selectedAnimation}`);
 
         return selectedAnimation;
     }
@@ -1405,6 +1526,17 @@ export class Avatar {
             return true;
         });
 
+        // ── MAP ACTUAL MODEL BONE NAMES (Dynamic Discovery) ──
+        const modelBones = {};
+        this.model.traverse(node => {
+            if (node.isBone) {
+                modelBones[node.name.toLowerCase()] = node.name;
+                // Add cleaned version (remove armature/root prefixes)
+                const clean = node.name.replace(/^(Armature|RootNode|Skeleton|AvatarRoot)_/i, '').toLowerCase();
+                modelBones[clean] = node.name;
+            }
+        });
+
         // ── Rename bone tracks to match RPM skeleton ──────────────────────────
         clip.tracks.forEach(track => {
             let name = track.name
@@ -1413,14 +1545,21 @@ export class Avatar {
                 .replace(/\.bones\[.*\]/g, '');
 
             const parts = name.split('.');
-            let boneName = parts[0];
-            const prop = parts.length > 1 ? '.' + parts.slice(1).join('.') : '';
+            if (parts.length < 2) return;
 
-            if (nameMap[boneName]) {
-                boneName = nameMap[boneName];
+            let boneName = parts[0].toLowerCase();
+            const property = '.' + parts.slice(1).join('.');
+
+            // Common Mixamo to RPM remapping
+            const standardMap = {
+                'pelvis': 'hips', 'hip': 'hips', 'l_hand': 'lefthand', 'r_hand': 'righthand'
+            };
+            if (standardMap[boneName]) boneName = standardMap[boneName];
+
+            const actualBone = modelBones[boneName];
+            if (actualBone) {
+                track.name = actualBone + property;
             }
-
-            track.name = boneName + prop;
         });
     }
 

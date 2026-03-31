@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter';
 
+/**
+ * AURA Motion Forge — FBX to GLB Forge Studio
+ * Refactored to support GLB export and refined animation cleaning.
+ */
 class GestureStudio {
     constructor() {
         this.scene = null;
@@ -23,8 +28,8 @@ class GestureStudio {
 
         // The FBX animation map (same as avatar.js)
         this.animationMap = {
-            'idle': 'Catwalk Walk Turn 180 Tight.fbx',
-            'happy': 'Sitting Laughing.fbx',
+            'idle': 'Catwalk Idle To Twist R.fbx',
+            'happy': 'Happy.fbx',
             'dance': 'Hip Hop Dancing.fbx',
             'dance2': 'Hip Hop Dancing-2.fbx',
             'clap': 'Clapping.fbx',
@@ -32,14 +37,23 @@ class GestureStudio {
             'sad': 'Defeated.fbx',
             'pray': 'Praying.fbx',
             'crouch': 'Crouch To Stand.fbx',
-            'walk': 'Catwalk Walk Turn 180 Tight-2.fbx'
+            'hug': 'Sitting Laughing.fbx',
+            'angry': 'Angry.fbx',
+            'walk_turn': 'Catwalk Walk Turn 180 Tight.fbx',
+            'jog': 'Jog In Circle.fbx',
+            'greet': 'Standing Greeting.fbx',
+            'fight': 'Standing Idle To Fight Idle.fbx',
+            'talking': 'Talking.fbx',
+            'taunt': 'Taunt.fbx'
         };
 
         // Emoji icons for each animation
         this.animIcons = {
             idle: '🚶', happy: '😄', dance: '💃', dance2: '🕺',
             clap: '👏', jump: '🦘', sad: '😞', pray: '🙏',
-            crouch: '🧎', walk: '🚶‍♂️'
+            crouch: '🧎', hug: '🫂', angry: '😠', walk_turn: '↩️',
+            jog: '🏃', greet: '👋', fight: '🥊', talking: '💬',
+            taunt: '😏'
         };
 
         // Emotion to gesture mapping (editable by user)
@@ -379,12 +393,13 @@ class GestureStudio {
                 </div>
                 <div class="anim-actions">
                     <button class="btn-add-seq" title="Add to sequence">+ Seq</button>
+                    <button class="btn-convert-glb" title="Export as GLB">📦 GLB</button>
                 </div>
             `;
 
             // Click card to preview animation
             card.addEventListener('click', (e) => {
-                if (e.target.classList.contains('btn-add-seq')) return;
+                if (e.target.tagName === 'BUTTON') return;
                 this.playAnimation(name);
             });
 
@@ -392,6 +407,12 @@ class GestureStudio {
             card.querySelector('.btn-add-seq').addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.addToSequence(name);
+            });
+
+            // Convert to GLB
+            card.querySelector('.btn-convert-glb').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.exportAnimationAsGLB(name);
             });
 
             list.appendChild(card);
@@ -735,6 +756,41 @@ class GestureStudio {
         a.click();
         URL.revokeObjectURL(a.href);
         this.setStatus('Exported!');
+    }
+
+    exportAnimationAsGLB(name) {
+        if (!this.model || !this.animationClips[name]) {
+            alert('Model or animation not ready.');
+            return;
+        }
+
+        this.setStatus(`⏳ Forging GLB for "${name}"...`);
+        const clip = this.animationClips[name].clone();
+        
+        const exporter = new GLTFExporter();
+        const options = {
+            binary: true,
+            animations: [clip],
+            includeCustomExtensions: false
+        };
+
+        exporter.parse(
+            this.model,
+            (result) => {
+                const blob = new Blob([result], { type: 'application/octet-stream' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${name.replace(/\s+/g, '_')}.glb`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                this.setStatus(`✓ "${name}" forged to GLB!`);
+            },
+            (err) => {
+                console.error('Export failed:', err);
+                this.setStatus('🔴 Export failed');
+            },
+            options
+        );
     }
 
     // ========== EVENTS ==========

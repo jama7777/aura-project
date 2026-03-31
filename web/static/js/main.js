@@ -192,35 +192,80 @@ const gestureHandler = new GestureHandler(avatar, (gesture) => {
 
 /**
  * Play a gesture's body animation without sending to the LLM.
- * Used when voice is processing and we want gestures to still feel alive.
+ * Every gesture plays its OWN dedicated unique animation — zero duplicates.
+ * Called IMMEDIATELY on both the busy path AND the normal API path,
+ * so the avatar always reacts visually right away.
+ *
+ * KEY ASSIGNMENTS (All Mixamo FBX files):
+ *  Gesture       → Animation key  → FBX file
+ *  ───────────────────────────────────────────────────────────────────────────
+ *  wave          → greet          → Standing Greeting.fbx
+ *  thumbs_up     → happy          → Happy.fbx
+ *  victory       → jump           → Jumping Down.fbx
+ *  clap          → clap           → Clapping.fbx
+ *  dance         → dance          → Hip Hop Dancing.fbx (or Hip Hop Dancing-2.fbx)
+ *  hug           → hug            → Sitting Laughing.fbx
+ *  point         → walk_turn      → Catwalk Walk Turn 180 Tight.fbx
+ *  horns         → fight          → Standing Idle To Fight Idle.fbx
+ *  call_me       → walk_turn2     → Catwalk Walk Turn 180 Tight-2.fbx
+ *  thumbs_down   → taunt          → Taunt.fbx
+ *  ok            → crouch         → Crouch To Stand.fbx
+ *  iloveyou      → pray           → Praying.fbx
+ *  vulcan        → talking        → Talking.fbx
+ *  open_palm     → jog            → Jog In Circle.fbx
+ *  fist          → angry          → Angry.fbx
  */
 function _playGestureAnimationOnly(gesture) {
-    const gestureAnimMap = {
-        wave:        'cmu_wave',          // ← CMU real wave mocap
-        thumbs_up:   'cmu_expressive2',   // ← CMU expressive
-        victory:     'cmu_dance3',        // ← CMU dance
-        clap:        'clap',
-        dance:       'dance',
-        hug:         'happy',
-        point:       'cmu_gesture',       // ← CMU gesture pointing
-        horns:       'cmu_dance4',        // ← CMU dance 2
-        call_me:     'cmu_wave2',         // ← CMU wave/point
-        thumbs_down: 'sad',
-        ok:          'cmu_expressive1',   // ← CMU expressive
-        iloveyou:    'pray',
-        vulcan:      'cmu_expressive3',   // ← CMU expressive
-        open_palm:   'cmu_wave3'          // ← CMU wave variant
+    // ── Direct 1-to-1: every gesture → its own unique visible animation ──────
+    const gestureAnimationMap = {
+        'wave':        'greet',           // Standing Greeting.fbx
+        'thumbs_up':   'happy',           // Happy.fbx
+        'victory':     'jump',            // Jumping Down.fbx
+        'clap':        'clap',            // Clapping.fbx
+        'dance':       'dance',           // Hip Hop Dancing.fbx
+        'hug':         'hug',             // Sitting Laughing.fbx
+        'point':       'walk_turn',       // Catwalk Walk Turn 180 Tight.fbx
+        'horns':       'fight',           // Standing Idle To Fight Idle.fbx
+        'call_me':     'walk_turn2',      // Catwalk Walk Turn 180 Tight-2.fbx
+        'thumbs_down': 'taunt',           // Taunt.fbx
+        'ok':          'crouch',          // Crouch To Stand.fbx
+        'iloveyou':    'pray',            // Praying.fbx
+        'vulcan':      'talking',         // Talking.fbx
+        'open_palm':   'jog',             // Jog In Circle.fbx
+        'fist':        'angry',           // Angry.fbx
     };
-    const anim = gestureAnimMap[gesture] || 'idle';
-    if (avatar) {
-        if (avatar.playSequence) {
-            // Priority-1: Better way to play animations while talking — ensures it doesn't get stuck
-            avatar.playSequence([anim], () => {
-                if (avatar.playAnimation) avatar.playAnimation('idle');
-            });
-        } else if (avatar.playAnimation) {
-            avatar.playAnimation(anim, true);
+
+    const normalizedGesture = gesture === 'points' ? 'point' : gesture;
+    let animKey = gestureAnimationMap[normalizedGesture];
+
+    if (!avatar) return;
+
+    // Special case: cycle through all available Mixamo dance animations
+    if (normalizedGesture === 'dance') {
+        if (typeof window._danceAnimCounter === 'undefined') window._danceAnimCounter = 0;
+        const availableDances = ['dance', 'dance2'].filter(k => avatar.animations && avatar.animations[k]);
+        if (availableDances.length > 0) {
+            animKey = availableDances[window._danceAnimCounter % availableDances.length];
+            window._danceAnimCounter++;
         }
+    }
+
+    if (animKey && avatar.animations && avatar.animations[animKey]) {
+        // Play the animation directly — bypass emotion system entirely
+        log(`[Gesture] 🎭 Direct play: ${normalizedGesture} → ${animKey}`);
+        avatar.playAnimation(animKey, true); // loopOnce = true → returns to idle after
+    } else {
+        // Fallback: animation not yet loaded → use emotion system
+        log(`[Gesture] ⚠️ "${animKey}" not loaded yet, emotion fallback for: ${normalizedGesture}`);
+        const fallbackEmotionMap = {
+            'wave': 'happy',   'thumbs_up': 'excited', 'victory': 'joy',
+            'clap': 'happy',   'dance': 'excited',     'hug': 'love',
+            'point': 'neutral','horns': 'angry',       'call_me': 'thinking',
+            'thumbs_down': 'sad', 'ok': 'joy',         'iloveyou': 'love',
+            'vulcan': 'thinking', 'open_palm': 'happy', 'fist': 'angry',
+        };
+        const emotion = fallbackEmotionMap[normalizedGesture] || 'neutral';
+        if (avatar.showEmotion) avatar.showEmotion(emotion, 0.85, true);
     }
 }
 
@@ -608,29 +653,30 @@ function triggerManualGesture(gesture) {
     const textInput = document.getElementById('text-input');
     const isTyping = textInput && (document.activeElement === textInput || textInput.value.trim().length > 0);
 
-    // If system is busy (recording, processing, or AURA is talking) OR user is typing,
-    // play the animation locally so the avatar still reacts, but DO NOT send a new API request.
-    // Interruption logic: some gestures should stop AURA speech and trigger a new response
-    const interruptionGestures = ['fist', 'thumbs_down', 'stop']; 
+    // ── INTERRUPTION: fist/thumbs_down while AURA is talking stops speech ────
+    const interruptionGestures = ['fist', 'thumbs_down', 'stop'];
     if (isAuraTalking && interruptionGestures.includes(gesture)) {
         log(`[Gesture] INTERRUPTION manual gesture detected: ${gesture}`);
         if (window.currentAudio) {
             window.currentAudio.pause();
             window.currentAudio.currentTime = 0;
-            window.currentAudio.dispatchEvent(new Event('ended')); // Clean up
+            window.currentAudio.dispatchEvent(new Event('ended'));
         }
         // Fall through to normal path to send to backend
     } else if (isRecording || _inputLocked || isAuraTalking || isTyping) {
-        log(`[Gesture] System busy or typing — playing animation locally for ${gesture}, skip API call.`);
+        log(`[Gesture] System busy — playing animation locally for ${gesture}, skip API call.`);
         _playGestureAnimationOnly(gesture);
-        
         if (isRecording || _lockSource === 'voice') {
             _showVoiceProcessingToast(gesture);
         }
         return;
     }
 
-    // Normal path
+    // ── Normal path: IMMEDIATELY play animation, then also send to backend ───
+    // This ensures the avatar reacts visually right away without waiting for
+    // the server to respond (which could take 1-2 seconds).
+    _playGestureAnimationOnly(gesture);
+
     if (!acquireInputLock('gesture')) return;
 
     addMessage(`(Gesture: ${gesture})`, 'user');
@@ -638,11 +684,11 @@ function triggerManualGesture(gesture) {
     fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            text: "", 
-            emotion: "neutral", 
-            face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off", 
-            gesture: gesture 
+        body: JSON.stringify({
+            text: "",
+            emotion: "neutral",
+            face_emotion: typeof cameraStream !== 'undefined' && cameraStream ? currentEmotion : "off",
+            gesture: gesture
         })
     })
         .then(res => res.json())
@@ -1498,25 +1544,44 @@ function addMessage(text, type, audioUrl = null, faceAnim = null) {
         div.style.cursor = "pointer";
     }
 
-    // Click handler for AURA's messages
+    // Click handler for AURA's messages (Replay Speech)
     if (type === 'aura') {
         div.addEventListener('click', () => {
             const url = div.dataset.audio;
             const anim = div._auraAnim;
             if (url) {
-                log(`[Replay] Clicking to replay: ${url}`);
-                // Replay logic: we treat this like a "Mini Response"
-                // But we don't send to backend, just play the audio & move mouth
+                log(`[Replay] Replaying speech: ${url}`);
                 const replayData = { 
                     text: div.textContent, 
                     audio_url: url,
                     face_animation: anim 
                 };
-                
-                // If she is currently talking, stop her first so user can hear the replay
                 if (isAuraTalking) stopAuraSpeech();
-                
                 handleResponse(replayData);
+            }
+        });
+    }
+
+    // click handler for USER gesture messages (Re-trigger Gesture)
+    if (type === 'user' && text.includes('(Gesture:')) {
+        div.title = "Click to re-trigger this gesture";
+        div.style.cursor = "pointer";
+        div.id = `gesture-msg-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        div.addEventListener('click', () => {
+            // Extract gesture name from "(Gesture: name)"
+            const match = text.match(/\(Gesture:\s*([^)]+)\)/);
+            if (match && match[1]) {
+                const gestureName = match[1].trim();
+                log(`[ChatGesture] Re-triggering gesture from click: ${gestureName}`);
+                
+                // Visual feedback on click
+                div.style.transform = 'scale(0.98)';
+                setTimeout(() => div.style.transform = '', 100);
+
+                if (typeof triggerManualGesture === 'function') {
+                    triggerManualGesture(gestureName);
+                }
             }
         });
     }
@@ -1636,7 +1701,8 @@ function startFaceDetection(video) {
             // Silently skip AI-processing if she is talking, recording, or thinking.
             // Visual mimicry (avatar.showEmotion) still happens because it's called above the lockout.
             const lockoutElapsed = Date.now() - lastSpeechEndTime;
-            if (isAuraTalking || isRecording || _inputLocked || (lockoutElapsed < 1200)) {
+            // Removed isAuraTalking from block to allow body motion while speaking
+            if (isRecording || _inputLocked || (lockoutElapsed < 1200)) {
                 return;
             }
 
@@ -1754,22 +1820,16 @@ function _updateEmotionBar(scores) {
 // This is PURELY local — no LLM call, no API request.
 // The face camera drives the avatar's expressions and body language directly.
 const FACE_EMOTION_ANIM_MAP = {
-    happy: ['happy'],        // Sitting Laughing
-    sad: ['sad'],          // Defeated
-    angry: ['sad'],          // Defeated (closest fallback)
-    surprised: ['jump'],         // Jump/startle
-    fearful: ['crouch'],       // Crouch
-    disgusted: ['sad'],          // Defeated
-    excited: ['clap'],         // Clapping
-    point: ['happy'],          // Thinking/Point
-    horns: ['dance'],          // 🤘
-    call_me: ['happy'],        // 🤙
-    thumbs_down: ['sad'],      // 👎
-    ok: ['happy'],             // 👌
-    iloveyou: ['pray'],        // 🤟
-    vulcan: ['jump'],          // 🖖
-    open_palm: ['happy'],      // 🖐️ Open Palm
-    neutral: ['idle'],         // Idle
+    happy: ['happy'],        // Happy anim
+    sad: ['sad'],            // Defeated
+    angry: ['angry'],        // Angry anim
+    surprised: ['jump'],     // Jump
+    fearful: ['crouch'],     // Crouch
+    disgusted: ['sad'],      // Defeated
+    excited: ['clap'],       // Clapping
+    neutral: ['idle'],       // Idle
+    thoughtful: ['talking'], // Talking
+    thinking: ['talking'],   // Talking
 };
 
 /**
