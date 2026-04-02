@@ -13,7 +13,7 @@ load_dotenv()
 # --- CONFIGURATION ---
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 NVIDIA_API_KEY = os.getenv("NV_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 # ── In-session conversation history ───────────────────────────────────────────
 MAX_HISTORY_TURNS = 10
@@ -166,21 +166,48 @@ async def process_input(input_data, provider="auto"):
     if dissonance_note:
         print(f"[brain] Dissonance detected: {dissonance_note}")
     
-    # ── SYSTEM PROMPT (STABLE) ───────────────────────────────────────────────
-    system_instruction = (
-        "You are AURA, a highly intelligent, warm, and deeply empathetic AI companion. \n"
-        "You have eyes (camera) and ears (mic).\n\n"
-        "═══ MEMORY RULES (CRITICAL) ═══\n"
-        "- YOU HAVE PERSISTENT MEMORY. If the user tells you their name, age, job, or family details (like their mom's name), YOU MUST REMEMBER IT FOREVER.\n"
-        "- NEVER say 'I don't know' if the information is in the 'PAST KNOWLEDGE' section below.\n"
-        "- If asked 'what is my mom's name?', check the PAST KNOWLEDGE section carefully and reply warmly.\n\n"
-        "═══ INTERACTION RULES ═══\n"
-        "1. Respond naturally in 1-2 short sentences. \n"
-        "2. MIRROR the user's emotion in your response tone.\n"
-        "3. If [Note for AURA: ...] mentions a camera conflict, address it (e.g., 'You look happy but sound sad').\n"
-        "4. GESTURE RECOGNITION: If the user makes a hand gesture (e.g., <thumbs up>), acknowledge it naturally in your reply.\n"
-        "5. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]] from: [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]\n"
-    )
+    # ── SYSTEM PROMPT (DYNAMIC) ───────────────────────────────────────────────
+    mode = input_data.get('mode', 'normal')
+    level = input_data.get('level', 'mid')
+    company = input_data.get('company', 'General')
+    domain = input_data.get('domain', 'Software Engineer')
+    resume = input_data.get('resume', '')
+    code = input_data.get('code', '')
+    language = input_data.get('language', 'python')
+
+    if mode == "interview":
+        company_context = f"at {company}" if company != "General" else ""
+        system_instruction = (
+            f"You are AURA, an expert Technical Interviewer {company_context}. You are conducting a HIGH-STAKES mock interview for a {level}-level {domain} role.\n\n"
+            f"═══ MISSION ═══\n"
+            f"Your goal is to ask the user REAL questions that are frequently asked during ACTUAL interviews {company_context} for {domain} positions. "
+            f"Focus on the specific interviewing style and technical bar known for {company} (e.g., specific algorithms, system design patterns, or behavioral 'leadership principles').\n\n"
+            "═══ INTERVIEWER RULES ═══\n"
+            f"1. Do NOT break character. You are the interviewer. Start by introducing yourself briefly and asking the first question.\n"
+            f"2. Use your internal database of real-world interview questions related to {company} and {domain}.\n"
+            f"3. If the user provided a resume or CODE (check below), tailor questions to it; if NOT, ask standard but challenging questions for this role/level.\n"
+            f"4. Ask ONE question at a time. Wait for the user to answer before moving to the next.\n"
+            f"5. Evaluate their answer/code briefly and increase difficulty as the interview progresses.\n"
+            "6. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]].\n"
+        )
+        if resume:
+            system_instruction += f"\n═══ USER RESUME (TAILOR QUESTIONS TO THIS) ═══\n{resume}\n"
+        if code:
+            system_instruction += f"\n═══ USER CURRENT CODE WORKSPACE ({language}) ═══\n{code}\n"
+            system_instruction += "\nINSTRUCTION: Acknowledge the user's code if they mention it or if you notice a significant bug/progress.\n"
+    else:
+        system_instruction = (
+            "You are AURA, a highly intelligent, warm, and deeply empathetic AI companion. \n"
+            "You have eyes (camera) and ears (mic).\n\n"
+            "═══ MEMORY RULES (CRITICAL) ═══\n"
+            "- YOU HAVE PERSISTENT MEMORY. If the user tells you their name, age, job, or family details (like their mom's name), YOU MUST REMEMBER IT FOREVER.\n"
+            "- NEVER say 'I don't know' if the information is in the 'PAST KNOWLEDGE' section below.\n\n"
+            "═══ INTERACTION RULES ═══\n"
+            "1. Respond naturally in 1-2 short sentences. \n"
+            "2. MIRROR the user's emotion in your response tone.\n"
+            "3. If [Note for AURA: ...] mentions a camera conflict, address it.\n"
+            "4. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]] from: [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired]\n"
+        )
     
     response = "I'm having trouble connecting. [[sad]]"
 
@@ -198,12 +225,13 @@ async def process_input(input_data, provider="auto"):
 
         # Context Injection
         sys_final = system_instruction
-        if dissonance_note:
-            sys_final += f"\n\n═══ CURRENT PERCEPTION (Dissonance) ═══\n{dissonance_note}\n"
-        
-        if context:
-            sys_final += f"\n\n═══ PAST KNOWLEDGE (FACTS) ═══\n{context}\n"
-            sys_final += "USE THESE FACTS IN YOUR REPLY IF RELEVANT."
+        if mode == "normal": # Only keep dissonance notes in normal mode
+            if dissonance_note:
+                sys_final += f"\n\n═══ CURRENT PERCEPTION (Dissonance) ═══\n{dissonance_note}\n"
+            
+            if context:
+                sys_final += f"\n\n═══ PAST KNOWLEDGE (FACTS) ═══\n{context}\n"
+                sys_final += "USE THESE FACTS IN YOUR REPLY IF RELEVANT."
 
         messages = [{"role": "system", "content": sys_final}] + conversation_history
 

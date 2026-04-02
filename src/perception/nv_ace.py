@@ -19,7 +19,7 @@ except ImportError:
 
 class NvidiaACEClient:
     def __init__(self, api_key=None, url="grpc.nvcf.nvidia.com:443", function_id=None):
-        self.api_key = api_key or os.getenv("NV_API_KEY")
+        self.api_key = api_key or os.getenv("NV_AUDIO2FACE_KEY") or os.getenv("NV_API_KEY")
         self.url = url
         # Using the function ID for Audio2Face-3D (Mark model) on NVCF
         self.function_id = function_id or "8efc55f5-6f00-424e-afe9-26212cd2c630" 
@@ -31,9 +31,11 @@ class NvidiaACEClient:
 
     def connect(self):
         if not self.api_key:
+            print("[ACE] Error: API key is missing. Sync will not work.")
             return False
             
         try:
+            print(f"[ACE] Connecting to {self.url} using key: {self.api_key[:10]}...")
             creds = grpc.ssl_channel_credentials()
             
             # Helper to add metadata
@@ -46,14 +48,15 @@ class NvidiaACEClient:
             
             try:
                 self.stub = audio2face_pb2_grpc.A2FControllerServiceStub(self.channel)
-                print(f"Connected to NVIDIA ACE at {self.url}")
+                # Verify connection with a brief check if possible, or just assume ok
+                print(f"[ACE] Channels established for {self.function_id}")
                 return True
             except NameError:
-                 print("NVIDIA ACE libraries not imported correctly.")
+                 print("[ACE] Error: NVIDIA ACE libraries (proto) not imported correctly.")
                  return False
 
         except Exception as e:
-            print(f"Failed to connect to NVIDIA ACE: {e}")
+            print(f"[ACE] Connection failed: {e}")
             return False
 
     def _get_emotion_params(self, emotion: str) -> Dict[str, float]:
@@ -77,14 +80,18 @@ class NvidiaACEClient:
         Returns a list of blendshape frames.
         """
         if not self.api_key:
-             self.api_key = os.getenv("NV_API_KEY")
+             self.api_key = os.getenv("NV_AUDIO2FACE_KEY") or os.getenv("NV_API_KEY")
 
         if not self.channel or not self.stub:
             if not self.connect():
                 print("NVIDIA ACE not connected. Returning None.")
                 return None
 
-        print(f"Sending {audio_file_path} to NVIDIA ACE with emotion: {emotion}...")
+        if not os.path.exists(audio_file_path):
+             print(f"[ACE] Error: File not found: {audio_file_path}")
+             return None
+
+        print(f"[ACE] Sending {os.path.basename(audio_file_path)} to NVIDIA ACE (Emotion: {emotion})...")
         
         try:
             # Open audio file
@@ -95,8 +102,9 @@ class NvidiaACEClient:
                 sampwidth = params.sampwidth
                 nframes = params.nframes
                 audio_data = wf.readframes(nframes)
-                
-            # Request Generator
+            
+            print(f"[ACE] Audio read: {nframes} frames at {framerate}Hz ({nchannels} channels)")
+            
             def request_generator():
                 # 1. Send Header
                 audio_header = audio_pb2.AudioHeader(

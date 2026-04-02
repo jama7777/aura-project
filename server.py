@@ -108,6 +108,16 @@ class ChatRequest(BaseModel):
     face_emotion: str = "neutral"   # from camera/face detection (separate channel)
     gesture: str = "none"
     provider: str = "auto"
+    mode: str = "normal"          # "normal" or "interview"
+    level: str = "mid"            # "junior", "mid", "senior"
+    company: str = "General"      # "Microsoft", "Google", etc.
+    domain: str = "Software Engineer" # "Data Analyst", "AI Engineer", etc.
+    code: Optional[str] = None
+    language: Optional[str] = None
+
+# Global or persistent storage for resume content (per session/user)
+# In a real app, this would be in a DB, but here we can use a simple dict or ChromaDB
+user_resumes = {} 
 
 def triple_fuse_emotions(audio_emo: str, text_emo: str, face_emo: str) -> str:
     """
@@ -176,7 +186,14 @@ async def chat(request: ChatRequest):
             "audio_emotion": "neutral",           # No audio in text chat
             "text_emotion": request.emotion,      # request.emotion is text sentiment in chat
             "face_emotion": request.face_emotion, # raw camera emotion for conflict detection
-            "gesture": request.gesture
+            "gesture": request.gesture,
+            "mode": request.mode,
+            "level": request.level,
+            "company": request.company,
+            "domain": request.domain,
+            "resume": user_resumes.get("current", ""), # Simple session handling
+            "code": request.code,
+            "language": request.language
         },
         provider=request.provider
     )
@@ -410,8 +427,43 @@ async def process_a2f(request: A2FRequest):
         print(f"A2F Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/audio")
-async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral"), gesture: str = Form("none")):
+@app.post("/api/upload-resume")
+async def upload_resume(file: UploadFile = File(...)):
+    """Upload and parse a PDF resume."""
+    try:
+        # Save temp file
+        raw_filename = f"resume_{uuid.uuid4()}.pdf"
+        with open(raw_filename, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Parse PDF
+        text = ""
+        try:
+            with open(raw_filename, "rb") as f:
+                pdf_reader = PyPDF2.PdfReader(f)
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+        except Exception as e:
+            print(f"PDF parsing error: {e}")
+            raise HTTPException(status_code=400, detail="Could not parse PDF. Please ensure it's a valid PDF file.")
+        finally:
+            if os.path.exists(raw_filename):
+                os.remove(raw_filename)
+
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract any text from the PDF.")
+
+        # Save to session (Mocked session: "current")
+        user_resumes["current"] = text.strip()
+        print(f"[Resume] Uploaded and parsed ({len(text)} characters)")
+        
+        return {"status": "success", "message": "Resume uploaded and indexed. AURA is now aware of your experience.", "char_count": len(text)}
+    except Exception as e:
+        print(f"[Resume] Upload failed: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/voice-chat")
+async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral"), gesture: str = Form("none"), mode: str = Form("normal"), level: str = Form("mid"), company: str = Form("General"), domain: str = Form("Software Engineer")):
     try:
         import subprocess
         
@@ -508,7 +560,12 @@ async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("n
             "audio_emotion": audio_emotion,
             "text_emotion": text_sentiment,
             "face_emotion": face_emotion,
-            "gesture": gesture
+            "gesture": gesture,
+            "mode": mode,
+            "level": level,
+            "company": company,
+            "domain": domain,
+            "resume": user_resumes.get("current", "")
         })
         response_text = processed_result["text"]
         response_emotion = processed_result["emotion"]

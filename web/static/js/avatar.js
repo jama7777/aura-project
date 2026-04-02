@@ -35,6 +35,12 @@ export class Avatar {
 
         // Dynamic Idle configuration
         this.defaultIdleAnimation = 'idle';
+
+        // Lip Sync State
+        this.faceAnimationFrames = [];
+        this.faceAnimationStartTime = 0;
+        this.faceAnimationActive = false;
+        this.faceAnimationCurrentIndex = 0;
     }
 
     log(msg) {
@@ -1445,7 +1451,40 @@ export class Avatar {
             this.starField.geometry.attributes.position.needsUpdate = true;
         }
 
+        // --- Lip Sync Processing ---
+        if (this.faceAnimationActive && this.faceAnimationFrames.length > 0) {
+            const elapsed = (performance.now() - this.faceAnimationStartTime) / 1000;
+            
+            // Find the best frame (optimised search)
+            let frame = null;
+            while (this.faceAnimationCurrentIndex < this.faceAnimationFrames.length - 1 && 
+                   this.faceAnimationFrames[this.faceAnimationCurrentIndex].time < elapsed) {
+                this.faceAnimationCurrentIndex++;
+            }
+            frame = this.faceAnimationFrames[this.faceAnimationCurrentIndex];
+
+            if (frame && frame.blendshapes) {
+                this.updateFace(frame.blendshapes, this.currentEmotion);
+            }
+
+            // End of animation
+            if (this.faceAnimationCurrentIndex >= this.faceAnimationFrames.length - 1 && 
+                elapsed > this.faceAnimationFrames[this.faceAnimationFrames.length - 1].time + 0.1) {
+                this.faceAnimationActive = false;
+                this.log("[Lipsync] Finished playback.");
+            }
+        }
+
         this.renderer.render(this.scene, this.camera);
+    }
+
+    playFaceAnimation(frames) {
+        if (!frames || frames.length === 0) return;
+        this.faceAnimationFrames = frames;
+        this.faceAnimationStartTime = performance.now();
+        this.faceAnimationCurrentIndex = 0;
+        this.faceAnimationActive = true;
+        this.log(`[Lipsync] Starting playback of ${frames.length} frames.`);
     }
     cleanAnimationClips(clip) {
         if (!clip) return;
