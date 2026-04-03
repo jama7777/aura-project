@@ -1,0 +1,60 @@
+{
+  "audio_url": "/audio/output_4080d1b3.mp3",
+  "text": "Hello, this is a test of the lipsync system. The mouth should animate smoothly with this audio.",
+  "metadata": {
+    "duration": 6.864,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 1.3164620213501621e-05
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0006519393646158278
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.0034478295128792524
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.005473077297210693
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.01713344268500805
+        }
+      },
+      {
+        "time": 0.128,
+        "blendshapes": {
+          "jawOpen": 0.03200145810842514
+        }
+      },
+      {
+        "time": 0.14933333333333335,
+        "blendshapes": {
+          "jawOpen": 0.19848495721817017
+        }
+      },
+      {
+        "time": 0.17066666666666666,
+        "blendshapes": {
+          "jawOpen": 0.4001213014125824,
+          "mouthFunnel": 

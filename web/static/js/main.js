@@ -158,6 +158,12 @@ function initInterviewUI() {
                 currentInterviewMeta.mode = 'normal';
                 interviewOverlay.style.opacity = '0';
                 setTimeout(() => interviewOverlay.style.display = 'none', 500);
+                
+                // Exit interview mode: unlock avatar position
+                if (avatar) {
+                    avatar.setEnvironmentMode(false);
+                    avatar.playAnimation(avatar.defaultIdleAnimation);
+                }
             }
         });
     }
@@ -516,11 +522,29 @@ function handleResponse(data) {
             audio.playbackRate = speed;
             audio.volume = 1.0; // Ensure loud audio
 
-            audio.addEventListener('play', () => {
+            audio.addEventListener('play', async () => {
                 _startLipSync(audio);
+                
                 // NEW: Trigger high-fidelity ACE animation if available
                 if (avatar && data.face_animation) {
                     avatar.playFaceAnimation(data.face_animation);
+                }
+                // NEW: Load lipsync metadata if ACE animation not available
+                else if (avatar && data.lipsync_url) {
+                    try {
+                        const response = await fetch(data.lipsync_url);
+                        if (response.ok) {
+                            const lipsyncData = await response.json();
+                            if (lipsyncData.frames && Array.isArray(lipsyncData.frames)) {
+                                avatar.playFaceAnimation(lipsyncData.frames);
+                                log(`[Lipsync] Loaded ${lipsyncData.frames.length} animation frames`);
+                            }
+                        } else {
+                            log(`[Lipsync] Failed to load metadata: ${response.status}`);
+                        }
+                    } catch (err) {
+                        console.warn('[Lipsync] Error loading metadata:', err.message);
+                    }
                 }
             });
             audio.addEventListener('ended', () => { _stopLipSync(); releaseInputLock(); });
@@ -854,12 +878,37 @@ function triggerAttentionWarning() {
     const phrase = _ATTENTION_PHRASES[Math.floor(Math.random() * _ATTENTION_PHRASES.length)];
     const msg = `[SYSTEM: The user is distracted. Briefly call their attention back naturally. Example: "${phrase}"]`;
     
+    _lastAttentionTime = now;
+    
+    // Generate warning audio immediately
+    (async () => {
+        try {
+            const response = await fetch('/api/animate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: "Please pay attention to the interview.",
+                    emotion: "concerned"
+                })
+            });
+            const data = await response.json();
+            if (data && data.audio_url) {
+                // Play warning audio directly
+                const audio = new Audio(data.audio_url);
+                audio.volume = 0.8;
+                audio.play().catch(err => console.log('[Warning Audio] Play failed:', err));
+                log('⚠️ Attention warning issued');
+            }
+        } catch (e) {
+            console.log('[Warning Audio] Error:', e.message);
+        }
+    })();
+    
     if (_inputLocked) {
         _pendingSystemMessage = msg; // Queue it
         return;
     }
-    
-    _lastAttentionTime = now;
+
     if (avatar && avatar.currentEmotion === 'neutral') avatar.showEmotion('thinking', 0.5, true);
     sendMessage(null, msg);
 }

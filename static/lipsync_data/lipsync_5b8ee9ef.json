@@ -1,0 +1,16 @@
+{
+  "audio_url": "/audio/output_4c886cc7.mp3",
+  "text": "I sense a bit of curiosity! Yes, there are several benefits to conducting interviews with me. One major advantage is that it allows you to practice your responses in a more comfortable and convenient setting. You can also receive personalized feedback from me to help you improve. Plus, it's a great way to reduce those pesky interview jitters!",
+  "metadata": {
+    "duration": 25.944,
+    "sample_rate": 24000,
+    "n_samples": 622656,
+    "engine": "librosa",
+    "timestamps": null
+  },
+  "animation_config": {
+    "use_blendshapes": true,
+    "loop": false,
+    "speed": 1.0
+  }
+}

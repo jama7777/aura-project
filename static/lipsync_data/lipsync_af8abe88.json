@@ -1,0 +1,42 @@
+{
+  "audio_url": "/audio/output_8385c3f5.mp3",
+  "text": "I see you're testing my lip sync feature, Jamadagni!",
+  "metadata": {
+    "duration": 4.272,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 2.145997859770432e-05
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0008499717223457992
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.024638479575514793
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.13911789655685425
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.32025817036628723,
+          "mouthFunnel": 

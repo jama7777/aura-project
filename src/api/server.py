@@ -43,7 +43,7 @@ async def chat(request: ChatRequest):
         # Generate audio
         # We need to modify speak to return the file path or handle it here
         # For now, assuming speak saves to 'output.wav'
-        audio_file = speak(response_text, return_file=True)
+        audio_file = speak(response_text, return_file=True, emotion=request.emotion)
         
         return {
             "response": response_text,

@@ -34,15 +34,37 @@ from src.core.brain import (  # type: ignore
     load_memory_into_session
 )
 from src.output.tts import speak, load_tts_model, update_voice_config # Import update_voice_config
-from src.perception.audio import (  # type: ignore
-    transcribe_audio_file,
-    analyze_emotion_file,
-    load_audio_models,
-    load_text_emotion_model,
-    text_emotion_classifier
-)
-from src.perception.grammar import load_grammar_model, correct_text_local, get_corrections  # type: ignore
-from src.perception.nv_ace import ace_client  # type: ignore
+
+# Try to import audio modules (optional - will use fallback if unavailable)
+_audio_available = False
+try:
+    from src.perception.audio import (  # type: ignore
+        transcribe_audio_file,
+        analyze_emotion_file,
+        load_audio_models,
+        load_text_emotion_model,
+        text_emotion_classifier
+    )
+    _audio_available = True
+    print("[server] Audio module loaded successfully")
+except ImportError as e:
+    print(f"[server] Audio module not available: {e}")
+
+_grammar_available = False
+try:
+    from src.perception.grammar import load_grammar_model, correct_text_local, get_corrections  # type: ignore
+    _grammar_available = True
+    print("[server] Grammar module loaded successfully")
+except Exception as e:
+    print(f"[server] Grammar module not available: {e}")
+
+_nv_ace_available = False
+try:
+    from src.perception.nv_ace import ace_client  # type: ignore
+    _nv_ace_available = True
+    print("[server] NVIDIA ACE module loaded successfully")
+except ImportError as e:
+    print(f"[server] NVIDIA ACE module not available: {e}")
 
 # ── End of Imports ─────────────────────────────────────────────────────────────
 
@@ -85,10 +107,24 @@ app.mount("/face-models", StaticFiles(directory="assets/face-models"), name="fac
 async def startup_event():
     print("Loading models...")
     try:
-        load_audio_models()
-        load_text_emotion_model()
-        load_grammar_model()
-        load_tts_model()
+        if _audio_available:
+            try:
+                load_audio_models()
+                load_text_emotion_model()
+            except Exception as e:
+                print(f"Error loading audio models: {e}")
+        
+        if _grammar_available:
+            try:
+                load_grammar_model()
+            except Exception as e:
+                print(f"Error loading grammar model: {e}")
+        
+        try:
+            load_tts_model()
+        except Exception as e:
+            print(f"Error loading TTS model: {e}")
+        
         print("Models loaded.")
     except Exception as e:
         print(f"Error loading models: {e}")
@@ -175,8 +211,17 @@ async def get_updates():
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
     # For text-only chat, audio emotion is obviously neutral
-    fused_emotion = triple_fuse_emotions("neutral", request.emotion, request.face_emotion)
-    print(f"Received chat: {request.text} | text_emo={request.emotion} face_emo={request.face_emotion} → fused={fused_emotion} | Gesture: {request.gesture}")
+    # But we should analyze the TEXT sentiment
+    text_sentiment = "neutral"
+    if request.text and request.text.strip():
+        try:
+            from src.perception.audio import analyze_text_sentiment
+            text_sentiment = await run_in_threadpool(analyze_text_sentiment, request.text)
+        except Exception as e:
+            print(f"[Chat] Text sentiment analysis failed: {e}")
+    
+    fused_emotion = triple_fuse_emotions("neutral", text_sentiment, request.face_emotion)
+    print(f"Received chat: {request.text} | text_emo={text_sentiment} face_emo={request.face_emotion} → fused={fused_emotion} | Gesture: {request.gesture}")
 
     # Process input normally even if text is empty (allows responding to gestures/emotions)
     processed_result = await process_input(
@@ -184,7 +229,7 @@ async def chat(request: ChatRequest):
             "text": request.text,
             "emotion": fused_emotion,
             "audio_emotion": "neutral",           # No audio in text chat
-            "text_emotion": request.emotion,      # request.emotion is text sentiment in chat
+            "text_emotion": text_sentiment,       # Analyzed text sentiment
             "face_emotion": request.face_emotion, # raw camera emotion for conflict detection
             "gesture": request.gesture,
             "mode": request.mode,
@@ -200,8 +245,8 @@ async def chat(request: ChatRequest):
     response_text = processed_result["text"]
     response_emotion = processed_result["emotion"]
     
-    # Generate Audio
-    audio_file = speak(response_text, return_file=True)
+    # Generate Audio with lipsync support (pass emotion for expressive animations)
+    audio_result = speak(response_text, return_file=True, include_lipsync=True, emotion=response_emotion)
     
     # (Redundant face animation call removed)
     
@@ -296,15 +341,20 @@ async def chat(request: ChatRequest):
     
     # Generate Face Animation using NVIDIA ACE
     face_animation = None
-    if audio_file:
-        face_animation = ace_client.process_audio(audio_file, emotion=response_emotion)
+    audio_url = None
+    lipsync_url = None
     
-    audio_url = f"/audio/{os.path.basename(audio_file)}" if audio_file else None
+    if audio_result:
+        audio_url = audio_result.get("audio_url")
+        lipsync_url = audio_result.get("lipsync_url")
+        if audio_url:
+            face_animation = ace_client.process_audio(audio_url, emotion=response_emotion)
     
     return {
         "text": response_text,
         "emotion": response_emotion,
         "audio_url": audio_url,
+        "lipsync_url": lipsync_url,
         "animations": animations, # Return list
         "face_animation": face_animation # New field for blendshapes
     }
@@ -321,16 +371,22 @@ async def animate_text(request: AnimateRequest):
     """
     print(f"Received animation request: {request.text} ({request.emotion})")
     
-    # 1. Generate Audio directly from text
-    audio_file = speak(request.text, return_file=True)
+    # 1. Generate Audio directly from text with lipsync (pass emotion for facial expressions)
+    audio_result = speak(request.text, return_file=True, include_lipsync=True, emotion=request.emotion)
     
     # 2. Generate Face Animation using NVIDIA ACE
     face_animation = None
-    if audio_file:
-        try:
-            face_animation = ace_client.process_audio(audio_file, emotion=request.emotion)
-        except Exception as e:
-            print(f"ACE Error: {e}")
+    audio_url = None
+    lipsync_url = None
+    
+    if audio_result:
+        audio_url = audio_result.get("audio_url")
+        lipsync_url = audio_result.get("lipsync_url")
+        if audio_url:
+            try:
+                face_animation = ace_client.process_audio(audio_url, emotion=request.emotion)
+            except Exception as e:
+                print(f"ACE Error: {e}")
     
     # 3. Determine body animations based on text keywords
     animations = []
@@ -350,13 +406,12 @@ async def animate_text(request: AnimateRequest):
     if not animations:
         # Fallback to pure emotion if no keywords
         animations = [request.emotion] if request.emotion != "neutral" else ["idle"]
-        
-    audio_url = f"/audio/{os.path.basename(audio_file)}" if audio_file else None
     
     return {
         "text": request.text,
         "emotion": request.emotion,
         "audio_url": audio_url,
+        "lipsync_url": lipsync_url,
         "animations": animations,
         "face_animation": face_animation,
         "timestamp": time.time()
@@ -578,14 +633,20 @@ async def upload_audio(
         response_text = processed_result["text"]
         response_emotion = processed_result["emotion"]
         
-        # Generate Audio (Blocking I/O/CPU task -> run in threadpool)
-        audio_file = await run_in_threadpool(speak, response_text, return_file=True)
+        # Generate Audio (Blocking I/O/CPU task -> run in threadpool) with lipsync
+        audio_result = await run_in_threadpool(speak, response_text, return_file=True, include_lipsync=True)
 
         # Generate Face Animation using NVIDIA ACE
         face_animation = None
-        if audio_file:
-            # Process NVIDIA ACE (sync blocking call -> threadpool)
-            face_animation = await run_in_threadpool(ace_client.process_audio, audio_file, emotion=response_emotion)
+        audio_url = None
+        lipsync_url = None
+        
+        if audio_result:
+            audio_url = audio_result.get("audio_url")
+            lipsync_url = audio_result.get("lipsync_url")
+            if audio_url:
+                # Process NVIDIA ACE (sync blocking call -> threadpool)
+                face_animation = await run_in_threadpool(ace_client.process_audio, audio_url, emotion=response_emotion)
         
         # Determine animations (list)
         animations = []
@@ -634,8 +695,6 @@ async def upload_audio(
         if not animations:
             animations = ["idle"]
         
-        audio_url = f"/audio/{os.path.basename(audio_file)}" if audio_file else None
-        
         return {
             "input_text": text,
             "input_emotion": audio_emotion,           # audio-detected emotion
@@ -644,6 +703,7 @@ async def upload_audio(
             "text": response_text,
             "emotion": response_emotion,
             "audio_url": audio_url,
+            "lipsync_url": lipsync_url,
             "animations": animations,
             "face_animation": face_animation
         }
@@ -762,19 +822,38 @@ async def correct_text(request: CorrectionRequest):
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
     print(f"[Audio endpoint] Requested: {filename}")
-    # Check in root first (old behavior)
-    file_path = os.path.abspath(filename)
-    if not os.path.exists(file_path):
-        # Then check in dedicated output folder
-        file_path = os.path.abspath(os.path.join("output", filename))
+    # Check in multiple locations: root, output, and static/audio
+    search_paths = [
+        os.path.abspath(filename),
+        os.path.abspath(os.path.join("output", filename)),
+        os.path.abspath(os.path.join("static/audio", filename))
+    ]
+    
+    file_path = None
+    for path in search_paths:
+        if os.path.exists(path):
+            file_path = path
+            break
 
-    if (os.path.exists(file_path)):
+    if file_path:
         # Explicitly set media type for wav/mp3 to prevent browser confusion
         mtype = "audio/wav" if filename.lower().endswith(".wav") else "audio/mpeg"
         return FileResponse(file_path, media_type=mtype)
     
-    print(f"[Audio endpoint] File not found: {file_path}")
+    print(f"[Audio endpoint] File not found in any location. Searched: {search_paths}")
     raise HTTPException(status_code=404, detail="File not found")
+
+@app.get("/lipsync_data/{filename}")
+async def get_lipsync_data(filename: str):
+    """Serve lipsync metadata JSON files for avatar animation."""
+    print(f"[Lipsync endpoint] Requested: {filename}")
+    file_path = os.path.abspath(os.path.join("static/lipsync_data", filename))
+    
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="application/json")
+    
+    print(f"[Lipsync endpoint] File not found: {file_path}")
+    raise HTTPException(status_code=404, detail="Lipsync metadata not found")
 
 @app.get("/")
 async def read_index():
@@ -877,3 +956,167 @@ async def voice_test_api(file: UploadFile = File(...)):
             {"emotion": text_emotion or "neutral", "source": "text", "confidence": 0.80}
         ]
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERVIEW ATTENTION TRACKING ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Import interview management
+from src.core.interview_manager import get_or_create_session, get_session_manager  # type: ignore
+
+class AttentionCheckRequest(BaseModel):
+    """Request to check and update user attention during interview."""
+    session_id: str
+    is_attentive: bool = True
+    gaze_direction: str = "center"  # center, left, right, up, down
+    face_detected: bool = True
+    emotion: str = "neutral"
+
+class InterviewStartRequest(BaseModel):
+    """Request to start a new interview session."""
+    session_id: str
+    level: str = "mid"              # junior, mid, senior
+    company: str = "General"
+    domain: str = "Software Engineer"
+
+class InterviewQuestionRequest(BaseModel):
+    """Request to record a question being asked."""
+    session_id: str
+    question: str
+
+@app.post("/api/interview/start")
+async def start_interview(request: InterviewStartRequest):
+    """
+    Start a new interview session with attention tracking.
+    Returns session info and interview parameters.
+    """
+    session = get_or_create_session(
+        request.session_id,
+        level=request.level,
+        company=request.company,
+        domain=request.domain
+    )
+    session.start()
+    
+    return {
+        "status": "interview_started",
+        "session_id": session.session_id,
+        "level": session.level,
+        "company": session.company,
+        "domain": session.domain,
+        "warning_threshold": session.warning_threshold
+    }
+
+@app.post("/api/interview/question")
+async def record_question(request: InterviewQuestionRequest):
+    """Record that a question is being asked."""
+    session = get_session_manager().get_session(request.session_id)
+    
+    if not session:
+        return JSONResponse(status_code=404, content={"error": f"Session not found: {request.session_id}"})
+    
+    session.record_question(request.question)
+    
+    return {
+        "status": "question_recorded",
+        "question_number": session.question_count,
+        "session_id": session.session_id
+    }
+
+@app.post("/api/interview/attention")
+async def check_attention(request: AttentionCheckRequest):
+    """
+    Check and update user attention during interview.
+    Called by frontend when face emotion is detected or updated.
+    
+    Returns: {
+        "status": "attentive" | "warning" | "stop_interview",
+        "warning_count": int,
+        "attention_score": float,
+        "action": str or None   # None, "WARN_1", "WARN_2", "STOP_INTERVIEW"
+    }
+    """
+    session = get_session_manager().get_session(request.session_id)
+    
+    if not session:
+        return JSONResponse(status_code=404, content={"error": f"Session not found: {request.session_id}"})
+    
+    # Check if interview should be stopped
+    if not request.face_detected or not request.is_attentive:
+        action = session.record_inattention()
+        
+        if action == "STOP_INTERVIEW":
+            session.stop(reason="inattention")
+            
+            # Generate warning audio for stop message
+            stop_message = f"Interview stopped. Too many inattention warnings. Please pay attention."
+            stop_audio = speak(stop_message, return_file=True, include_lipsync=False, emotion="angry")
+            stop_audio_url = stop_audio.get("audio_url") if stop_audio else None
+            
+            return {
+                "status": "stop_interview",
+                "warning_count": session.warning_count,
+                "attention_score": session.current_attention_score,
+                "action": "STOP_INTERVIEW",
+                "message": stop_message,
+                "audio_url": stop_audio_url
+            }
+        elif action and action.startswith("WARNING"):
+            # Generate warning audio to voice the warning
+            warning_num = session.warning_count
+            warning_message = f"Warning {warning_num}. Please pay attention to the interview."
+            warning_audio = speak(warning_message, return_file=True, include_lipsync=False, emotion="concerned")
+            warning_audio_url = warning_audio.get("audio_url") if warning_audio else None
+            
+            return {
+                "status": "warning",
+                "warning_count": session.warning_count,
+                "attention_score": session.current_attention_score,
+                "action": action,
+                "message": f"⚠️ Warning #{warning_num}: Please pay attention to the interview.",
+                "audio_url": warning_audio_url
+            }
+    else:
+        # User is attentive
+        session.record_attention()
+    
+    return {
+        "status": "attentive",
+        "warning_count": session.warning_count,
+        "attention_score": session.current_attention_score,
+        "action": None
+    }
+
+@app.get("/api/interview/status/{session_id}")
+async def get_interview_status(session_id: str):
+    """Get current interview status."""
+    session = get_session_manager().get_session(session_id)
+    
+    if not session:
+        return JSONResponse(status_code=404, content={"error": f"Session not found: {session_id}"})
+    
+    return session.get_status()
+
+@app.post("/api/interview/end")
+async def end_interview(request: dict):
+    """
+    End interview session and get report.
+    Request should contain: {"session_id": "..."}
+    """
+    session_id = request.get("session_id")
+    session = get_session_manager().get_session(session_id)
+    
+    if not session:
+        return JSONResponse(status_code=404, content={"error": f"Session not found: {session_id}"})
+    
+    session.stop(reason="completed")
+    report = session.get_report()
+    
+    # Remove session from manager
+    get_session_manager().end_session(session_id)
+    
+    return {
+        "status": "interview_ended",
+        "report": report
+    }

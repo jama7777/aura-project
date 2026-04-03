@@ -1,0 +1,36 @@
+{
+  "audio_url": "/audio/output_f90899ca.mp3",
+  "text": "Nice to finally connect with you, Jamadagni!",
+  "metadata": {
+    "duration": 3.696,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 3.170189302181825e-05
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0010818189475685358
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.17137141525745392
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4651378393173218,
+          "mouthFunnel": 

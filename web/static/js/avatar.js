@@ -35,6 +35,10 @@ class AuraAvatar {
         this.faceAnimationStartTime = 0;
         this.faceAnimationActive = false;
         this.faceAnimationCurrentIndex = 0;
+
+        // Interview Mode: Lock avatar position
+        this.isInterviewMode = false;
+        this.lockedModelPosition = { x: 0, y: -75, z: 0 };
     }
 
     log(msg) {
@@ -487,6 +491,20 @@ class AuraAvatar {
     setEnvironmentMode(isInterview) {
         if (this.desk) this.desk.visible = isInterview;
         if (this.chair) this.chair.visible = isInterview;
+        
+        // Set interview mode and lock avatar position
+        this.isInterviewMode = isInterview;
+        if (isInterview && this.model) {
+            // Store current position as locked position
+            this.lockedModelPosition = {
+                x: this.model.position.x,
+                y: this.model.position.y,
+                z: this.model.position.z
+            };
+            this.log(`✓ Interview Mode: Avatar position LOCKED at (${this.lockedModelPosition.x}, ${this.lockedModelPosition.y}, ${this.lockedModelPosition.z})`);
+        } else {
+            this.log(`✓ Home Mode: Avatar position unlocked`);
+        }
         
         // Adjust camera slightly for sitting
         if (isInterview) {
@@ -1379,6 +1397,14 @@ class AuraAvatar {
             if (this.mixer) this.mixer.update(delta);
         } catch (e) {
             console.error("Animation Mixer Update Error:", e);
+        }
+
+        // ── INTERVIEW MODE: Enforce position lock ──
+        // During interview, keep avatar in sitting position (no movement across screen)
+        if (this.isInterviewMode && this.model) {
+            this.model.position.x = this.lockedModelPosition.x;
+            this.model.position.y = this.lockedModelPosition.y;
+            this.model.position.z = this.lockedModelPosition.z;
         }
 
         if (this.planet) {

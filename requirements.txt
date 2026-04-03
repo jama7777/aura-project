@@ -32,5 +32,10 @@ grpcio-tools==1.64.0
 # NVIDIA (may be unavailable in cloud - see notes)
 # nvidia-audio2face-3d
 
+# Computer Vision / Face Detection
+opencv-python==4.10.1
+deepface==0.0.79
+mediapipe==0.10.14
+
 # PDF parsing
 PyPDF2==3.0.1

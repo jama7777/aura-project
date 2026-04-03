@@ -1,0 +1,78 @@
+{
+  "audio_url": "/audio/output_60741a7e.mp3",
+  "text": "Let's get started with the mock interview, Jamadagni. As a Senior Technical Interviewer at Microsoft, I'll be evaluating your technical skills, problem-solving abilities, and cultural fit for a junior-level Frontend Engineer role.\n\nHere's your first question:\n\nCan you explain the difference between var, let, and const in JavaScript? Provide an example of when you would use each.",
+  "metadata": {
+    "duration": 30.048,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 6.339658398246684e-07
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 5.26933717992506e-06
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.002104549203068018
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.005670475773513317
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.006053546909242868
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.006772135384380817
+        }
+      },
+      {
+        "time": 0.128,
+        "blendshapes": {
+          "jawOpen": 0.009244953282177448
+        }
+      },
+      {
+        "time": 0.14933333333333335,
+        "blendshapes": {
+          "jawOpen": 0.01065625250339508
+        }
+      },
+      {
+        "time": 0.17066666666666666,
+        "blendshapes": {
+          "jawOpen": 0.01177275087684393
+        }
+      },
+      {
+        "time": 0.192,
+        "blendshapes": {
+          "jawOpen": 0.045826420187950134
+        }
+      },
+      {
+        "time": 0.21333333333333335,
+        "blendshapes": {
+          "jawOpen": 0.17924872040748596
+        }
+      },
+      {
+        "time": 0.23466666666666666,
+        "blendshapes": {
+          "jawOpen": 0.30601873993873596,
+          "mouthFunnel": 

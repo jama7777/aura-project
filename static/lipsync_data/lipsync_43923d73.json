@@ -1,0 +1,42 @@
+{
+  "audio_url": "/audio/output_3b95b6ae.mp3",
+  "text": "I'm designed to be a highly empathetic and intelligent AI companion, Jamadagni! I can assist with a wide range of tasks, from having conversations to helping with mock interviews and providing feedback. However, I do have limitations - for instance, I can only respond based on my training data and might not always understand nuances or sarcasm. I'm constantly learning, though!",
+  "metadata": {
+    "duration": 29.352,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 5.840952780999942e-06
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0005835029878653586
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.0426514558494091
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.17199161648750305
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3238776922225952,
+          "mouthFunnel": 

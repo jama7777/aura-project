@@ -1,0 +1,2517 @@
+{
+  "audio_url": "/audio/output_3f03908f.mp3",
+  "text": "I can see you through the camera feature you added, Jamadagni! It's great to have a visual connection with you .",
+  "metadata": {
+    "duration": 8.04,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 1.8079084838973358e-05
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0008970203343778849
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.02592081017792225
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.16077739000320435
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3567577600479126,
+          "mouthFunnel": 0.1783788800239563
+        }
+      },
+      {
+        "time": 0.128,
+        "blendshapes": {
+          "jawOpen": 0.5108644962310791,
+          "mouthFunnel": 0.25543224811553955
+        }
+      },
+      {
+        "time": 0.14933333333333335,
+        "blendshapes": {
+          "jawOpen": 0.6564114689826965,
+          "mouthFunnel": 0.32820573449134827
+        }
+      },
+      {
+        "time": 0.17066666666666666,
+        "blendshapes": {
+          "jawOpen": 0.7261792421340942,
+          "mouthFunnel": 0.3630896210670471
+        }
+      },
+      {
+        "time": 0.192,
+        "blendshapes": {
+          "jawOpen": 0.7340761423110962,
+          "mouthFunnel": 0.3670380711555481
+        }
+      },
+      {
+        "time": 0.21333333333333335,
+        "blendshapes": {
+          "jawOpen": 0.7105780839920044,
+          "mouthFunnel": 0.3552890419960022
+        }
+      },
+      {
+        "time": 0.23466666666666666,
+        "blendshapes": {
+          "jawOpen": 0.5824325084686279,
+          "mouthFunnel": 0.29121625423431396
+        }
+      },
+      {
+        "time": 0.256,
+        "blendshapes": {
+          "jawOpen": 0.46650633215904236,
+          "mouthFunnel": 0.23325316607952118
+        }
+      },
+      {
+        "time": 0.2773333333333333,
+        "blendshapes": {
+          "jawOpen": 0.32353371381759644,
+          "mouthFunnel": 0.16176685690879822
+        }
+      },
+      {
+        "time": 0.2986666666666667,
+        "blendshapes": {
+          "jawOpen": 0.07473727315664291
+        }
+      },
+      {
+        "time": 0.32,
+        "blendshapes": {
+          "jawOpen": 0.18129044771194458
+        }
+      },
+      {
+        "time": 0.3413333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4204961359500885,
+          "mouthFunnel": 0.21024806797504425
+        }
+      },
+      {
+        "time": 0.3626666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5966074466705322,
+          "mouthFunnel": 0.2983037233352661
+        }
+      },
+      {
+        "time": 0.384,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.4053333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.4266666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.448,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.4693333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.49066666666666664,
+        "blendshapes": {
+          "jawOpen": 0.6427369117736816,
+          "mouthFunnel": 0.3213684558868408
+        }
+      },
+      {
+        "time": 0.512,
+        "blendshapes": {
+          "jawOpen": 0.27424994111061096
+        }
+      },
+      {
+        "time": 0.5333333333333333,
+        "blendshapes": {
+          "jawOpen": 0.25882256031036377
+        }
+      },
+      {
+        "time": 0.5546666666666666,
+        "blendshapes": {
+          "jawOpen": 0.2532254755496979
+        }
+      },
+      {
+        "time": 0.576,
+        "blendshapes": {
+          "jawOpen": 0.33878007531166077,
+          "mouthFunnel": 0.16939003765583038
+        }
+      },
+      {
+        "time": 0.5973333333333334,
+        "blendshapes": {
+          "jawOpen": 0.6833211183547974,
+          "mouthFunnel": 0.3416605591773987
+        }
+      },
+      {
+        "time": 0.6186666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.64,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.6613333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.6826666666666666,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.704,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.7253333333333334,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.7466666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.768,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.7893333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.8106666666666666,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.832,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.8533333333333334,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 0.8746666666666667,
+        "blendshapes": {
+          "jawOpen": 0.7542093396186829,
+          "mouthFunnel": 0.37710466980934143
+        }
+      },
+      {
+        "time": 0.896,
+        "blendshapes": {
+          "jawOpen": 0.5622422695159912,
+          "mouthFunnel": 0.2811211347579956
+        }
+      },
+      {
+        "time": 0.9173333333333333,
+        "blendshapes": {
+          "jawOpen": 0.32619190216064453,
+          "mouthFunnel": 0.16309595108032227
+        }
+      },
+      {
+        "time": 0.9386666666666666,
+        "blendshapes": {
+          "jawOpen": 0.06635528057813644
+        }
+      },
+      {
+        "time": 0.96,
+        "blendshapes": {
+          "jawOpen": 0.05266907066106796
+        }
+      },
+      {
+        "time": 0.9813333333333333,
+        "blendshapes": {
+          "jawOpen": 0.06819486618041992
+        }
+      },
+      {
+        "time": 1.0026666666666666,
+        "blendshapes": {
+          "jawOpen": 0.08575520664453506
+        }
+      },
+      {
+        "time": 1.024,
+        "blendshapes": {
+          "jawOpen": 0.09499120712280273
+        }
+      },
+      {
+        "time": 1.0453333333333332,
+        "blendshapes": {
+          "jawOpen": 0.28542813658714294
+        }
+      },
+      {
+        "time": 1.0666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4522190988063812,
+          "mouthFunnel": 0.2261095494031906
+        }
+      },
+      {
+        "time": 1.088,
+        "blendshapes": {
+          "jawOpen": 0.5685063004493713,
+          "mouthFunnel": 0.28425315022468567
+        }
+      },
+      {
+        "time": 1.1093333333333333,
+        "blendshapes": {
+          "jawOpen": 0.644699215888977,
+          "mouthFunnel": 0.3223496079444885
+        }
+      },
+      {
+        "time": 1.1306666666666667,
+        "blendshapes": {
+          "jawOpen": 0.6160436868667603,
+          "mouthFunnel": 0.3080218434333801
+        }
+      },
+      {
+        "time": 1.152,
+        "blendshapes": {
+          "jawOpen": 0.5276820063591003,
+          "mouthFunnel": 0.26384100317955017
+        }
+      },
+      {
+        "time": 1.1733333333333333,
+        "blendshapes": {
+          "jawOpen": 0.40543365478515625,
+          "mouthFunnel": 0.20271682739257812
+        }
+      },
+      {
+        "time": 1.1946666666666668,
+        "blendshapes": {
+          "jawOpen": 0.45554304122924805,
+          "mouthFunnel": 0.22777152061462402
+        }
+      },
+      {
+        "time": 1.216,
+        "blendshapes": {
+          "jawOpen": 0.7220052480697632,
+          "mouthFunnel": 0.3610026240348816
+        }
+      },
+      {
+        "time": 1.2373333333333334,
+        "blendshapes": {
+          "jawOpen": 0.7903162837028503,
+          "mouthFunnel": 0.39515814185142517
+        }
+      },
+      {
+        "time": 1.2586666666666666,
+        "blendshapes": {
+          "jawOpen": 0.7874799370765686,
+          "mouthFunnel": 0.3937399685382843
+        }
+      },
+      {
+        "time": 1.28,
+        "blendshapes": {
+          "jawOpen": 0.6946491003036499,
+          "mouthFunnel": 0.34732455015182495
+        }
+      },
+      {
+        "time": 1.3013333333333332,
+        "blendshapes": {
+          "jawOpen": 0.36068645119667053,
+          "mouthFunnel": 0.18034322559833527
+        }
+      },
+      {
+        "time": 1.3226666666666667,
+        "blendshapes": {
+          "jawOpen": 0.05402540788054466
+        }
+      },
+      {
+        "time": 1.344,
+        "blendshapes": {
+          "jawOpen": 0.03109799511730671
+        }
+      },
+      {
+        "time": 1.3653333333333333,
+        "blendshapes": {
+          "jawOpen": 0.21682427823543549
+        }
+      },
+      {
+        "time": 1.3866666666666667,
+        "blendshapes": {
+          "jawOpen": 0.37915077805519104,
+          "mouthFunnel": 0.18957538902759552
+        }
+      },
+      {
+        "time": 1.408,
+        "blendshapes": {
+          "jawOpen": 0.49867597222328186,
+          "mouthFunnel": 0.24933798611164093
+        }
+      },
+      {
+        "time": 1.4293333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6224931478500366,
+          "mouthFunnel": 0.3112465739250183
+        }
+      },
+      {
+        "time": 1.4506666666666668,
+        "blendshapes": {
+          "jawOpen": 0.6935598850250244,
+          "mouthFunnel": 0.3467799425125122
+        }
+      },
+      {
+        "time": 1.472,
+        "blendshapes": {
+          "jawOpen": 0.7036547660827637,
+          "mouthFunnel": 0.35182738304138184
+        }
+      },
+      {
+        "time": 1.4933333333333334,
+        "blendshapes": {
+          "jawOpen": 0.6832428574562073,
+          "mouthFunnel": 0.34162142872810364
+        }
+      },
+      {
+        "time": 1.5146666666666666,
+        "blendshapes": {
+          "jawOpen": 0.6247963905334473,
+          "mouthFunnel": 0.31239819526672363
+        }
+      },
+      {
+        "time": 1.536,
+        "blendshapes": {
+          "jawOpen": 0.5977782011032104,
+          "mouthFunnel": 0.2988891005516052
+        }
+      },
+      {
+        "time": 1.5573333333333332,
+        "blendshapes": {
+          "jawOpen": 0.6143087148666382,
+          "mouthFunnel": 0.3071543574333191
+        }
+      },
+      {
+        "time": 1.5786666666666667,
+        "blendshapes": {
+          "jawOpen": 0.6343762278556824,
+          "mouthFunnel": 0.3171881139278412
+        }
+      },
+      {
+        "time": 1.6,
+        "blendshapes": {
+          "jawOpen": 0.6723012924194336,
+          "mouthFunnel": 0.3361506462097168
+        }
+      },
+      {
+        "time": 1.6213333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6467770338058472,
+          "mouthFunnel": 0.3233885169029236
+        }
+      },
+      {
+        "time": 1.6426666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5649522542953491,
+          "mouthFunnel": 0.28247612714767456
+        }
+      },
+      {
+        "time": 1.664,
+        "blendshapes": {
+          "jawOpen": 0.5464934706687927,
+          "mouthFunnel": 0.27324673533439636
+        }
+      },
+      {
+        "time": 1.6853333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5731871128082275,
+          "mouthFunnel": 0.28659355640411377
+        }
+      },
+      {
+        "time": 1.7066666666666668,
+        "blendshapes": {
+          "jawOpen": 0.6304800510406494,
+          "mouthFunnel": 0.3152400255203247
+        }
+      },
+      {
+        "time": 1.728,
+        "blendshapes": {
+          "jawOpen": 0.7032907605171204,
+          "mouthFunnel": 0.3516453802585602
+        }
+      },
+      {
+        "time": 1.7493333333333334,
+        "blendshapes": {
+          "jawOpen": 0.6935172080993652,
+          "mouthFunnel": 0.3467586040496826
+        }
+      },
+      {
+        "time": 1.7706666666666666,
+        "blendshapes": {
+          "jawOpen": 0.58848637342453,
+          "mouthFunnel": 0.294243186712265
+        }
+      },
+      {
+        "time": 1.792,
+        "blendshapes": {
+          "jawOpen": 0.4524022042751312,
+          "mouthFunnel": 0.2262011021375656
+        }
+      },
+      {
+        "time": 1.8133333333333332,
+        "blendshapes": {
+          "jawOpen": 0.2755575478076935
+        }
+      },
+      {
+        "time": 1.8346666666666667,
+        "blendshapes": {
+          "jawOpen": 0.09219815582036972
+        }
+      },
+      {
+        "time": 1.856,
+        "blendshapes": {
+          "jawOpen": 0.02307281643152237
+        }
+      },
+      {
+        "time": 1.8773333333333333,
+        "blendshapes": {
+          "jawOpen": 0.06479503959417343
+        }
+      },
+      {
+        "time": 1.8986666666666667,
+        "blendshapes": {
+          "jawOpen": 0.2230003923177719
+        }
+      },
+      {
+        "time": 1.92,
+        "blendshapes": {
+          "jawOpen": 0.3128441572189331,
+          "mouthFunnel": 0.15642207860946655
+        }
+      },
+      {
+        "time": 1.9413333333333334,
+        "blendshapes": {
+          "jawOpen": 0.3821927309036255,
+          "mouthFunnel": 0.19109636545181274
+        }
+      },
+      {
+        "time": 1.9626666666666666,
+        "blendshapes": {
+          "jawOpen": 0.42678436636924744,
+          "mouthFunnel": 0.21339218318462372
+        }
+      },
+      {
+        "time": 1.984,
+        "blendshapes": {
+          "jawOpen": 0.388685017824173,
+          "mouthFunnel": 0.1943425089120865
+        }
+      },
+      {
+        "time": 2.005333333333333,
+        "blendshapes": {
+          "jawOpen": 0.3213803768157959,
+          "mouthFunnel": 0.16069018840789795
+        }
+      },
+      {
+        "time": 2.026666666666667,
+        "blendshapes": {
+          "jawOpen": 0.23469658195972443
+        }
+      },
+      {
+        "time": 2.048,
+        "blendshapes": {
+          "jawOpen": 0.17610056698322296
+        }
+      },
+      {
+        "time": 2.0693333333333332,
+        "blendshapes": {
+          "jawOpen": 0.19894272089004517
+        }
+      },
+      {
+        "time": 2.0906666666666665,
+        "blendshapes": {
+          "jawOpen": 0.2205428034067154
+        }
+      },
+      {
+        "time": 2.112,
+        "blendshapes": {
+          "jawOpen": 0.3082530200481415,
+          "mouthFunnel": 0.15412651002407074
+        }
+      },
+      {
+        "time": 2.1333333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4311448335647583,
+          "mouthFunnel": 0.21557241678237915
+        }
+      },
+      {
+        "time": 2.1546666666666665,
+        "blendshapes": {
+          "jawOpen": 0.5215114951133728,
+          "mouthFunnel": 0.2607557475566864
+        }
+      },
+      {
+        "time": 2.176,
+        "blendshapes": {
+          "jawOpen": 0.6112985610961914,
+          "mouthFunnel": 0.3056492805480957
+        }
+      },
+      {
+        "time": 2.1973333333333334,
+        "blendshapes": {
+          "jawOpen": 0.6504912972450256,
+          "mouthFunnel": 0.3252456486225128
+        }
+      },
+      {
+        "time": 2.2186666666666666,
+        "blendshapes": {
+          "jawOpen": 0.609227180480957,
+          "mouthFunnel": 0.3046135902404785
+        }
+      },
+      {
+        "time": 2.24,
+        "blendshapes": {
+          "jawOpen": 0.5459461808204651,
+          "mouthFunnel": 0.27297309041023254
+        }
+      },
+      {
+        "time": 2.2613333333333334,
+        "blendshapes": {
+          "jawOpen": 0.46956899762153625,
+          "mouthFunnel": 0.23478449881076813
+        }
+      },
+      {
+        "time": 2.2826666666666666,
+        "blendshapes": {
+          "jawOpen": 0.4113211929798126,
+          "mouthFunnel": 0.2056605964899063
+        }
+      },
+      {
+        "time": 2.304,
+        "blendshapes": {
+          "jawOpen": 0.4254126250743866,
+          "mouthFunnel": 0.2127063125371933
+        }
+      },
+      {
+        "time": 2.3253333333333335,
+        "blendshapes": {
+          "jawOpen": 0.5005654692649841,
+          "mouthFunnel": 0.25028273463249207
+        }
+      },
+      {
+        "time": 2.3466666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5990104079246521,
+          "mouthFunnel": 0.29950520396232605
+        }
+      },
+      {
+        "time": 2.368,
+        "blendshapes": {
+          "jawOpen": 0.6499600410461426,
+          "mouthFunnel": 0.3249800205230713
+        }
+      },
+      {
+        "time": 2.3893333333333335,
+        "blendshapes": {
+          "jawOpen": 0.6495643258094788,
+          "mouthFunnel": 0.3247821629047394
+        }
+      },
+      {
+        "time": 2.4106666666666667,
+        "blendshapes": {
+          "jawOpen": 0.6024969816207886,
+          "mouthFunnel": 0.3012484908103943
+        }
+      },
+      {
+        "time": 2.432,
+        "blendshapes": {
+          "jawOpen": 0.4893949031829834,
+          "mouthFunnel": 0.2446974515914917
+        }
+      },
+      {
+        "time": 2.453333333333333,
+        "blendshapes": {
+          "jawOpen": 0.363835871219635,
+          "mouthFunnel": 0.1819179356098175
+        }
+      },
+      {
+        "time": 2.474666666666667,
+        "blendshapes": {
+          "jawOpen": 0.2576466202735901
+        }
+      },
+      {
+        "time": 2.496,
+        "blendshapes": {
+          "jawOpen": 0.13998517394065857
+        }
+      },
+      {
+        "time": 2.517333333333333,
+        "blendshapes": {
+          "jawOpen": 0.1514550894498825
+        }
+      },
+      {
+        "time": 2.538666666666667,
+        "blendshapes": {
+          "jawOpen": 0.26250314712524414
+        }
+      },
+      {
+        "time": 2.56,
+        "blendshapes": {
+          "jawOpen": 0.3822545111179352,
+          "mouthFunnel": 0.1911272555589676
+        }
+      },
+      {
+        "time": 2.5813333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4650886356830597,
+          "mouthFunnel": 0.23254431784152985
+        }
+      },
+      {
+        "time": 2.6026666666666665,
+        "blendshapes": {
+          "jawOpen": 0.5409214496612549,
+          "mouthFunnel": 0.27046072483062744
+        }
+      },
+      {
+        "time": 2.624,
+        "blendshapes": {
+          "jawOpen": 0.5611030459403992,
+          "mouthFunnel": 0.2805515229701996
+        }
+      },
+      {
+        "time": 2.6453333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5207862257957458,
+          "mouthFunnel": 0.2603931128978729
+        }
+      },
+      {
+        "time": 2.6666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.4569569528102875,
+          "mouthFunnel": 0.22847847640514374
+        }
+      },
+      {
+        "time": 2.688,
+        "blendshapes": {
+          "jawOpen": 0.33855289220809937,
+          "mouthFunnel": 0.16927644610404968
+        }
+      },
+      {
+        "time": 2.7093333333333334,
+        "blendshapes": {
+          "jawOpen": 0.21630677580833435
+        }
+      },
+      {
+        "time": 2.7306666666666666,
+        "blendshapes": {
+          "jawOpen": 0.20323550701141357
+        }
+      },
+      {
+        "time": 2.752,
+        "blendshapes": {
+          "jawOpen": 0.2795133888721466
+        }
+      },
+      {
+        "time": 2.7733333333333334,
+        "blendshapes": {
+          "jawOpen": 0.32048723101615906,
+          "mouthFunnel": 0.16024361550807953
+        }
+      },
+      {
+        "time": 2.7946666666666666,
+        "blendshapes": {
+          "jawOpen": 0.3540495038032532,
+          "mouthFunnel": 0.1770247519016266
+        }
+      },
+      {
+        "time": 2.816,
+        "blendshapes": {
+          "jawOpen": 0.3439333438873291,
+          "mouthFunnel": 0.17196667194366455
+        }
+      },
+      {
+        "time": 2.8373333333333335,
+        "blendshapes": {
+          "jawOpen": 0.29878920316696167
+        }
+      },
+      {
+        "time": 2.8586666666666667,
+        "blendshapes": {
+          "jawOpen": 0.2537449896335602
+        }
+      },
+      {
+        "time": 2.88,
+        "blendshapes": {
+          "jawOpen": 0.2047690600156784
+        }
+      },
+      {
+        "time": 2.9013333333333335,
+        "blendshapes": {
+          "jawOpen": 0.1455690562725067
+        }
+      },
+      {
+        "time": 2.9226666666666667,
+        "blendshapes": {
+          "jawOpen": 0.07502535730600357
+        }
+      },
+      {
+        "time": 2.944,
+        "blendshapes": {
+          "jawOpen": 0.05142635852098465
+        }
+      },
+      {
+        "time": 2.965333333333333,
+        "blendshapes": {
+          "jawOpen": 0.0330800898373127
+        }
+      },
+      {
+        "time": 2.986666666666667,
+        "blendshapes": {
+          "jawOpen": 0.027578072622418404
+        }
+      },
+      {
+        "time": 3.008,
+        "blendshapes": {
+          "jawOpen": 0.02696426399052143
+        }
+      },
+      {
+        "time": 3.029333333333333,
+        "blendshapes": {
+          "jawOpen": 0.013298296369612217
+        }
+      },
+      {
+        "time": 3.050666666666667,
+        "blendshapes": {
+          "jawOpen": 0.0056987339630723
+        }
+      },
+      {
+        "time": 3.072,
+        "blendshapes": {
+          "jawOpen": 0.002675957279279828
+        }
+      },
+      {
+        "time": 3.0933333333333333,
+        "blendshapes": {
+          "jawOpen": 0.0012851710198447108
+        }
+      },
+      {
+        "time": 3.1146666666666665,
+        "blendshapes": {
+          "jawOpen": 0.000568401301279664
+        }
+      },
+      {
+        "time": 3.136,
+        "blendshapes": {
+          "jawOpen": 0.00038837737520225346
+        }
+      },
+      {
+        "time": 3.1573333333333333,
+        "blendshapes": {
+          "jawOpen": 0.00032583941356278956
+        }
+      },
+      {
+        "time": 3.1786666666666665,
+        "blendshapes": {
+          "jawOpen": 0.00030261086067184806
+        }
+      },
+      {
+        "time": 3.2,
+        "blendshapes": {
+          "jawOpen": 0.00027682314976118505
+        }
+      },
+      {
+        "time": 3.2213333333333334,
+        "blendshapes": {
+          "jawOpen": 0.0002716539893299341
+        }
+      },
+      {
+        "time": 3.2426666666666666,
+        "blendshapes": {
+          "jawOpen": 0.00027090279036201537
+        }
+      },
+      {
+        "time": 3.264,
+        "blendshapes": {
+          "jawOpen": 0.0002710360859055072
+        }
+      },
+      {
+        "time": 3.2853333333333334,
+        "blendshapes": {
+          "jawOpen": 0.0002703798527363688
+        }
+      },
+      {
+        "time": 3.3066666666666666,
+        "blendshapes": {
+          "jawOpen": 0.0002697660238482058
+        }
+      },
+      {
+        "time": 3.328,
+        "blendshapes": {
+          "jawOpen": 0.00026472023455426097
+        }
+      },
+      {
+        "time": 3.3493333333333335,
+        "blendshapes": {
+          "jawOpen": 0.00022712675854563713
+        }
+      },
+      {
+        "time": 3.3706666666666667,
+        "blendshapes": {
+          "jawOpen": 0.0001825072686187923
+        }
+      },
+      {
+        "time": 3.392,
+        "blendshapes": {
+          "jawOpen": 0.00012325661373324692
+        }
+      },
+      {
+        "time": 3.4133333333333336,
+        "blendshapes": {
+          "jawOpen": 0.00012674809840973467
+        }
+      },
+      {
+        "time": 3.4346666666666668,
+        "blendshapes": {
+          "jawOpen": 0.012611166574060917
+        }
+      },
+      {
+        "time": 3.456,
+        "blendshapes": {
+          "jawOpen": 0.14822953939437866
+        }
+      },
+      {
+        "time": 3.477333333333333,
+        "blendshapes": {
+          "jawOpen": 0.28590884804725647
+        }
+      },
+      {
+        "time": 3.498666666666667,
+        "blendshapes": {
+          "jawOpen": 0.33685895800590515,
+          "mouthFunnel": 0.16842947900295258
+        }
+      },
+      {
+        "time": 3.52,
+        "blendshapes": {
+          "jawOpen": 0.3388875722885132,
+          "mouthFunnel": 0.1694437861442566
+        }
+      },
+      {
+        "time": 3.541333333333333,
+        "blendshapes": {
+          "jawOpen": 0.31985312700271606,
+          "mouthFunnel": 0.15992656350135803
+        }
+      },
+      {
+        "time": 3.562666666666667,
+        "blendshapes": {
+          "jawOpen": 0.24042493104934692
+        }
+      },
+      {
+        "time": 3.584,
+        "blendshapes": {
+          "jawOpen": 0.31265509128570557,
+          "mouthFunnel": 0.15632754564285278
+        }
+      },
+      {
+        "time": 3.6053333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4970339238643646,
+          "mouthFunnel": 0.2485169619321823
+        }
+      },
+      {
+        "time": 3.6266666666666665,
+        "blendshapes": {
+          "jawOpen": 0.6413222551345825,
+          "mouthFunnel": 0.32066112756729126
+        }
+      },
+      {
+        "time": 3.648,
+        "blendshapes": {
+          "jawOpen": 0.76920485496521,
+          "mouthFunnel": 0.384602427482605
+        }
+      },
+      {
+        "time": 3.6693333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.6906666666666665,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.712,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.7333333333333334,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.7546666666666666,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.776,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.7973333333333334,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.8186666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.84,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.8613333333333335,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.8826666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 3.904,
+        "blendshapes": {
+          "jawOpen": 0.737546980381012,
+          "mouthFunnel": 0.368773490190506
+        }
+      },
+      {
+        "time": 3.925333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6670781373977661,
+          "mouthFunnel": 0.33353906869888306
+        }
+      },
+      {
+        "time": 3.9466666666666668,
+        "blendshapes": {
+          "jawOpen": 0.551854133605957,
+          "mouthFunnel": 0.2759270668029785
+        }
+      },
+      {
+        "time": 3.968,
+        "blendshapes": {
+          "jawOpen": 0.4909313917160034,
+          "mouthFunnel": 0.2454656958580017
+        }
+      },
+      {
+        "time": 3.989333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6897274851799011,
+          "mouthFunnel": 0.34486374258995056
+        }
+      },
+      {
+        "time": 4.010666666666666,
+        "blendshapes": {
+          "jawOpen": 0.7866982817649841,
+          "mouthFunnel": 0.39334914088249207
+        }
+      },
+      {
+        "time": 4.032,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.053333333333334,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.074666666666666,
+        "blendshapes": {
+          "jawOpen": 0.7313215732574463,
+          "mouthFunnel": 0.36566078662872314
+        }
+      },
+      {
+        "time": 4.096,
+        "blendshapes": {
+          "jawOpen": 0.5814427137374878,
+          "mouthFunnel": 0.2907213568687439
+        }
+      },
+      {
+        "time": 4.117333333333334,
+        "blendshapes": {
+          "jawOpen": 0.4359997510910034,
+          "mouthFunnel": 0.2179998755455017
+        }
+      },
+      {
+        "time": 4.1386666666666665,
+        "blendshapes": {
+          "jawOpen": 0.42817381024360657,
+          "mouthFunnel": 0.21408690512180328
+        }
+      },
+      {
+        "time": 4.16,
+        "blendshapes": {
+          "jawOpen": 0.6049762964248657,
+          "mouthFunnel": 0.30248814821243286
+        }
+      },
+      {
+        "time": 4.181333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.2026666666666666,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.224,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.245333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.266666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 4.288,
+        "blendshapes": {
+          "jawOpen": 0.692607045173645,
+          "mouthFunnel": 0.3463035225868225
+        }
+      },
+      {
+        "time": 4.309333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5940052270889282,
+          "mouthFunnel": 0.2970026135444641
+        }
+      },
+      {
+        "time": 4.330666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4999399483203888,
+          "mouthFunnel": 0.2499699741601944
+        }
+      },
+      {
+        "time": 4.352,
+        "blendshapes": {
+          "jawOpen": 0.4075775444507599,
+          "mouthFunnel": 0.20378877222537994
+        }
+      },
+      {
+        "time": 4.373333333333333,
+        "blendshapes": {
+          "jawOpen": 0.3276752233505249,
+          "mouthFunnel": 0.16383761167526245
+        }
+      },
+      {
+        "time": 4.394666666666667,
+        "blendshapes": {
+          "jawOpen": 0.24714012444019318
+        }
+      },
+      {
+        "time": 4.416,
+        "blendshapes": {
+          "jawOpen": 0.1746228039264679
+        }
+      },
+      {
+        "time": 4.437333333333333,
+        "blendshapes": {
+          "jawOpen": 0.11359650641679764
+        }
+      },
+      {
+        "time": 4.458666666666667,
+        "blendshapes": {
+          "jawOpen": 0.060500141233205795
+        }
+      },
+      {
+        "time": 4.48,
+        "blendshapes": {
+          "jawOpen": 0.022226795554161072
+        }
+      },
+      {
+        "time": 4.501333333333333,
+        "blendshapes": {
+          "jawOpen": 0.004121384117752314
+        }
+      },
+      {
+        "time": 4.522666666666667,
+        "blendshapes": {
+          "jawOpen": 0.0014573730295524001
+        }
+      },
+      {
+        "time": 4.544,
+        "blendshapes": {
+          "jawOpen": 0.0006540552712976933
+        }
+      },
+      {
+        "time": 4.565333333333333,
+        "blendshapes": {
+          "jawOpen": 0.00046595686580985785
+        }
+      },
+      {
+        "time": 4.586666666666667,
+        "blendshapes": {
+          "jawOpen": 0.0003691418969538063
+        }
+      },
+      {
+        "time": 4.608,
+        "blendshapes": {
+          "jawOpen": 0.0003463766479399055
+        }
+      },
+      {
+        "time": 4.629333333333333,
+        "blendshapes": {
+          "jawOpen": 0.0003180278872605413
+        }
+      },
+      {
+        "time": 4.650666666666667,
+        "blendshapes": {
+          "jawOpen": 0.000274469843134284
+        }
+      },
+      {
+        "time": 4.672,
+        "blendshapes": {
+          "jawOpen": 0.0002594803227111697
+        }
+      },
+      {
+        "time": 4.693333333333333,
+        "blendshapes": {
+          "jawOpen": 0.0002203245385317132
+        }
+      },
+      {
+        "time": 4.714666666666667,
+        "blendshapes": {
+          "jawOpen": 0.00017381068028043956
+        }
+      },
+      {
+        "time": 4.736,
+        "blendshapes": {
+          "jawOpen": 0.00010995387856382877
+        }
+      },
+      {
+        "time": 4.757333333333333,
+        "blendshapes": {
+          "jawOpen": 6.63537866785191e-05
+        }
+      },
+      {
+        "time": 4.778666666666667,
+        "blendshapes": {
+          "jawOpen": 0.001040339469909668
+        }
+      },
+      {
+        "time": 4.8,
+        "blendshapes": {
+          "jawOpen": 0.0024008802138268948
+        }
+      },
+      {
+        "time": 4.8213333333333335,
+        "blendshapes": {
+          "jawOpen": 0.024774139747023582
+        }
+      },
+      {
+        "time": 4.842666666666666,
+        "blendshapes": {
+          "jawOpen": 0.35206568241119385,
+          "mouthFunnel": 0.17603284120559692
+        }
+      },
+      {
+        "time": 4.864,
+        "blendshapes": {
+          "jawOpen": 0.5657255053520203,
+          "mouthFunnel": 0.28286275267601013
+        }
+      },
+      {
+        "time": 4.8853333333333335,
+        "blendshapes": {
+          "jawOpen": 0.6258240938186646,
+          "mouthFunnel": 0.3129120469093323
+        }
+      },
+      {
+        "time": 4.906666666666666,
+        "blendshapes": {
+          "jawOpen": 0.6264007091522217,
+          "mouthFunnel": 0.31320035457611084
+        }
+      },
+      {
+        "time": 4.928,
+        "blendshapes": {
+          "jawOpen": 0.5187070965766907,
+          "mouthFunnel": 0.25935354828834534
+        }
+      },
+      {
+        "time": 4.949333333333334,
+        "blendshapes": {
+          "jawOpen": 0.2721101641654968
+        }
+      },
+      {
+        "time": 4.970666666666666,
+        "blendshapes": {
+          "jawOpen": 0.13302120566368103
+        }
+      },
+      {
+        "time": 4.992,
+        "blendshapes": {
+          "jawOpen": 0.22931234538555145
+        }
+      },
+      {
+        "time": 5.013333333333334,
+        "blendshapes": {
+          "jawOpen": 0.24709339439868927
+        }
+      },
+      {
+        "time": 5.034666666666666,
+        "blendshapes": {
+          "jawOpen": 0.24593140184879303
+        }
+      },
+      {
+        "time": 5.056,
+        "blendshapes": {
+          "jawOpen": 0.2131042629480362
+        }
+      },
+      {
+        "time": 5.077333333333334,
+        "blendshapes": {
+          "jawOpen": 0.14820410311222076
+        }
+      },
+      {
+        "time": 5.0986666666666665,
+        "blendshapes": {
+          "jawOpen": 0.15881215035915375
+        }
+      },
+      {
+        "time": 5.12,
+        "blendshapes": {
+          "jawOpen": 0.1626708209514618
+        }
+      },
+      {
+        "time": 5.141333333333334,
+        "blendshapes": {
+          "jawOpen": 0.17360399663448334
+        }
+      },
+      {
+        "time": 5.1626666666666665,
+        "blendshapes": {
+          "jawOpen": 0.223403200507164
+        }
+      },
+      {
+        "time": 5.184,
+        "blendshapes": {
+          "jawOpen": 0.35963693261146545,
+          "mouthFunnel": 0.17981846630573273
+        }
+      },
+      {
+        "time": 5.205333333333333,
+        "blendshapes": {
+          "jawOpen": 0.536789059638977,
+          "mouthFunnel": 0.2683945298194885
+        }
+      },
+      {
+        "time": 5.226666666666667,
+        "blendshapes": {
+          "jawOpen": 0.6853514909744263,
+          "mouthFunnel": 0.34267574548721313
+        }
+      },
+      {
+        "time": 5.248,
+        "blendshapes": {
+          "jawOpen": 0.7789309620857239,
+          "mouthFunnel": 0.38946548104286194
+        }
+      },
+      {
+        "time": 5.269333333333333,
+        "blendshapes": {
+          "jawOpen": 0.7992830872535706,
+          "mouthFunnel": 0.3996415436267853
+        }
+      },
+      {
+        "time": 5.290666666666667,
+        "blendshapes": {
+          "jawOpen": 0.7873459458351135,
+          "mouthFunnel": 0.39367297291755676
+        }
+      },
+      {
+        "time": 5.312,
+        "blendshapes": {
+          "jawOpen": 0.7091431617736816,
+          "mouthFunnel": 0.3545715808868408
+        }
+      },
+      {
+        "time": 5.333333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5780017375946045,
+          "mouthFunnel": 0.28900086879730225
+        }
+      },
+      {
+        "time": 5.354666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4591318368911743,
+          "mouthFunnel": 0.22956591844558716
+        }
+      },
+      {
+        "time": 5.376,
+        "blendshapes": {
+          "jawOpen": 0.2630488872528076
+        }
+      },
+      {
+        "time": 5.397333333333333,
+        "blendshapes": {
+          "jawOpen": 0.028246605768799782
+        }
+      },
+      {
+        "time": 5.418666666666667,
+        "blendshapes": {
+          "jawOpen": 0.005913490895181894
+        }
+      },
+      {
+        "time": 5.44,
+        "blendshapes": {
+          "jawOpen": 0.03224361687898636
+        }
+      },
+      {
+        "time": 5.461333333333333,
+        "blendshapes": {
+          "jawOpen": 0.10583572834730148
+        }
+      },
+      {
+        "time": 5.482666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3170044422149658,
+          "mouthFunnel": 0.1585022211074829
+        }
+      },
+      {
+        "time": 5.504,
+        "blendshapes": {
+          "jawOpen": 0.4518626928329468,
+          "mouthFunnel": 0.2259313464164734
+        }
+      },
+      {
+        "time": 5.525333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5364101529121399,
+          "mouthFunnel": 0.26820507645606995
+        }
+      },
+      {
+        "time": 5.546666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5930669903755188,
+          "mouthFunnel": 0.2965334951877594
+        }
+      },
+      {
+        "time": 5.568,
+        "blendshapes": {
+          "jawOpen": 0.543262779712677,
+          "mouthFunnel": 0.2716313898563385
+        }
+      },
+      {
+        "time": 5.589333333333333,
+        "blendshapes": {
+          "jawOpen": 0.45025837421417236,
+          "mouthFunnel": 0.22512918710708618
+        }
+      },
+      {
+        "time": 5.610666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3656187057495117,
+          "mouthFunnel": 0.18280935287475586
+        }
+      },
+      {
+        "time": 5.632,
+        "blendshapes": {
+          "jawOpen": 0.28777366876602173
+        }
+      },
+      {
+        "time": 5.653333333333333,
+        "blendshapes": {
+          "jawOpen": 0.2959354519844055
+        }
+      },
+      {
+        "time": 5.674666666666667,
+        "blendshapes": {
+          "jawOpen": 0.36000892519950867,
+          "mouthFunnel": 0.18000446259975433
+        }
+      },
+      {
+        "time": 5.696,
+        "blendshapes": {
+          "jawOpen": 0.4950280785560608,
+          "mouthFunnel": 0.2475140392780304
+        }
+      },
+      {
+        "time": 5.717333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6642600297927856,
+          "mouthFunnel": 0.3321300148963928
+        }
+      },
+      {
+        "time": 5.738666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 5.76,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 5.781333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 5.802666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 5.824,
+        "blendshapes": {
+          "jawOpen": 0.6377949714660645,
+          "mouthFunnel": 0.3188974857330322
+        }
+      },
+      {
+        "time": 5.8453333333333335,
+        "blendshapes": {
+          "jawOpen": 0.4221161901950836,
+          "mouthFunnel": 0.2110580950975418
+        }
+      },
+      {
+        "time": 5.866666666666666,
+        "blendshapes": {
+          "jawOpen": 0.30998289585113525,
+          "mouthFunnel": 0.15499144792556763
+        }
+      },
+      {
+        "time": 5.888,
+        "blendshapes": {
+          "jawOpen": 0.4623797833919525,
+          "mouthFunnel": 0.23118989169597626
+        }
+      },
+      {
+        "time": 5.9093333333333335,
+        "blendshapes": {
+          "jawOpen": 0.5907806158065796,
+          "mouthFunnel": 0.2953903079032898
+        }
+      },
+      {
+        "time": 5.930666666666666,
+        "blendshapes": {
+          "jawOpen": 0.6391935348510742,
+          "mouthFunnel": 0.3195967674255371
+        }
+      },
+      {
+        "time": 5.952,
+        "blendshapes": {
+          "jawOpen": 0.6148297786712646,
+          "mouthFunnel": 0.3074148893356323
+        }
+      },
+      {
+        "time": 5.973333333333334,
+        "blendshapes": {
+          "jawOpen": 0.5112115740776062,
+          "mouthFunnel": 0.2556057870388031
+        }
+      },
+      {
+        "time": 5.994666666666666,
+        "blendshapes": {
+          "jawOpen": 0.3991181552410126,
+          "mouthFunnel": 0.1995590776205063
+        }
+      },
+      {
+        "time": 6.016,
+        "blendshapes": {
+          "jawOpen": 0.5021625757217407,
+          "mouthFunnel": 0.25108128786087036
+        }
+      },
+      {
+        "time": 6.037333333333334,
+        "blendshapes": {
+          "jawOpen": 0.6961023807525635,
+          "mouthFunnel": 0.34805119037628174
+        }
+      },
+      {
+        "time": 6.058666666666666,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.08,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.101333333333334,
+        "blendshapes": {
+          "jawOpen": 0.7504146099090576,
+          "mouthFunnel": 0.3752073049545288
+        }
+      },
+      {
+        "time": 6.1226666666666665,
+        "blendshapes": {
+          "jawOpen": 0.5584704279899597,
+          "mouthFunnel": 0.27923521399497986
+        }
+      },
+      {
+        "time": 6.144,
+        "blendshapes": {
+          "jawOpen": 0.3576475977897644,
+          "mouthFunnel": 0.1788237988948822
+        }
+      },
+      {
+        "time": 6.165333333333334,
+        "blendshapes": {
+          "jawOpen": 0.2999417781829834
+        }
+      },
+      {
+        "time": 6.1866666666666665,
+        "blendshapes": {
+          "jawOpen": 0.3037168085575104,
+          "mouthFunnel": 0.1518584042787552
+        }
+      },
+      {
+        "time": 6.208,
+        "blendshapes": {
+          "jawOpen": 0.3411523103713989,
+          "mouthFunnel": 0.17057615518569946
+        }
+      },
+      {
+        "time": 6.229333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4016572833061218,
+          "mouthFunnel": 0.2008286416530609
+        }
+      },
+      {
+        "time": 6.250666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4712151885032654,
+          "mouthFunnel": 0.2356075942516327
+        }
+      },
+      {
+        "time": 6.272,
+        "blendshapes": {
+          "jawOpen": 0.6001039743423462,
+          "mouthFunnel": 0.3000519871711731
+        }
+      },
+      {
+        "time": 6.293333333333333,
+        "blendshapes": {
+          "jawOpen": 0.7533324360847473,
+          "mouthFunnel": 0.37666621804237366
+        }
+      },
+      {
+        "time": 6.314666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.336,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.357333333333333,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.378666666666667,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.4,
+        "blendshapes": {
+          "jawOpen": 0.8,
+          "mouthFunnel": 0.4
+        }
+      },
+      {
+        "time": 6.421333333333333,
+        "blendshapes": {
+          "jawOpen": 0.6771703362464905,
+          "mouthFunnel": 0.33858516812324524
+        }
+      },
+      {
+        "time": 6.442666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5005004405975342,
+          "mouthFunnel": 0.2502502202987671
+        }
+      },
+      {
+        "time": 6.464,
+        "blendshapes": {
+          "jawOpen": 0.2638532221317291
+        }
+      },
+      {
+        "time": 6.485333333333333,
+        "blendshapes": {
+          "jawOpen": 0.0452040359377861
+        }
+      },
+      {
+        "time": 6.506666666666667,
+        "blendshapes": {
+          "jawOpen": 0.1377599537372589
+        }
+      },
+      {
+        "time": 6.528,
+        "blendshapes": {
+          "jawOpen": 0.32874616980552673,
+          "mouthFunnel": 0.16437308490276337
+        }
+      },
+      {
+        "time": 6.549333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4593493342399597,
+          "mouthFunnel": 0.22967466711997986
+        }
+      },
+      {
+        "time": 6.570666666666667,
+        "blendshapes": {
+          "jawOpen": 0.5354648232460022,
+          "mouthFunnel": 0.2677324116230011
+        }
+      },
+      {
+        "time": 6.592,
+        "blendshapes": {
+          "jawOpen": 0.5720522403717041,
+          "mouthFunnel": 0.28602612018585205
+        }
+      },
+      {
+        "time": 6.613333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5443636178970337,
+          "mouthFunnel": 0.27218180894851685
+        }
+      },
+      {
+        "time": 6.634666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4915587306022644,
+          "mouthFunnel": 0.2457793653011322
+        }
+      },
+      {
+        "time": 6.656,
+        "blendshapes": {
+          "jawOpen": 0.46295973658561707,
+          "mouthFunnel": 0.23147986829280853
+        }
+      },
+      {
+        "time": 6.677333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4466717839241028,
+          "mouthFunnel": 0.2233358919620514
+        }
+      },
+      {
+        "time": 6.698666666666667,
+        "blendshapes": {
+          "jawOpen": 0.4214176535606384,
+          "mouthFunnel": 0.2107088267803192
+        }
+      },
+      {
+        "time": 6.72,
+        "blendshapes": {
+          "jawOpen": 0.4005953371524811,
+          "mouthFunnel": 0.20029766857624054
+        }
+      },
+      {
+        "time": 6.741333333333333,
+        "blendshapes": {
+          "jawOpen": 0.34142374992370605,
+          "mouthFunnel": 0.17071187496185303
+        }
+      },
+      {
+        "time": 6.762666666666667,
+        "blendshapes": {
+          "jawOpen": 0.2690108120441437
+        }
+      },
+      {
+        "time": 6.784,
+        "blendshapes": {
+          "jawOpen": 0.19035059213638306
+        }
+      },
+      {
+        "time": 6.8053333333333335,
+        "blendshapes": {
+          "jawOpen": 0.09857723116874695
+        }
+      },
+      {
+        "time": 6.826666666666667,
+        "blendshapes": {
+          "jawOpen": 0.16002465784549713
+        }
+      },
+      {
+        "time": 6.848,
+        "blendshapes": {
+          "jawOpen": 0.25949904322624207
+        }
+      },
+      {
+        "time": 6.8693333333333335,
+        "blendshapes": {
+          "jawOpen": 0.33677542209625244,
+          "mouthFunnel": 0.16838771104812622
+        }
+      },
+      {
+        "time": 6.890666666666666,
+        "blendshapes": {
+          "jawOpen": 0.3878512382507324,
+          "mouthFunnel": 0.1939256191253662
+        }
+      },
+      {
+        "time": 6.912,
+        "blendshapes": {
+          "jawOpen": 0.37056729197502136,
+          "mouthFunnel": 0.18528364598751068
+        }
+      },
+      {
+        "time": 6.933333333333334,
+        "blendshapes": {
+          "jawOpen": 0.36329910159111023,
+          "mouthFunnel": 0.18164955079555511
+        }
+      },
+      {
+        "time": 6.954666666666666,
+        "blendshapes": {
+          "jawOpen": 0.37618276476860046,
+          "mouthFunnel": 0.18809138238430023
+        }
+      },
+      {
+        "time": 6.976,
+        "blendshapes": {
+          "jawOpen": 0.4016259014606476,
+          "mouthFunnel": 0.2008129507303238
+        }
+      },
+      {
+        "time": 6.997333333333334,
+        "blendshapes": {
+          "jawOpen": 0.5143713355064392,
+          "mouthFunnel": 0.2571856677532196
+        }
+      },
+      {
+        "time": 7.018666666666666,
+        "blendshapes": {
+          "jawOpen": 0.58320152759552,
+          "mouthFunnel": 0.29160076379776
+        }
+      },
+      {
+        "time": 7.04,
+        "blendshapes": {
+          "jawOpen": 0.6219998002052307,
+          "mouthFunnel": 0.31099990010261536
+        }
+      },
+      {
+        "time": 7.061333333333334,
+        "blendshapes": {
+          "jawOpen": 0.635718584060669,
+          "mouthFunnel": 0.3178592920303345
+        }
+      },
+      {
+        "time": 7.082666666666666,
+        "blendshapes": {
+          "jawOpen": 0.5654839873313904,
+          "mouthFunnel": 0.2827419936656952
+        }
+      },
+      {
+        "time": 7.104,
+        "blendshapes": {
+          "jawOpen": 0.48551928997039795,
+          "mouthFunnel": 0.24275964498519897
+        }
+      },
+      {
+        "time": 7.125333333333334,
+        "blendshapes": {
+          "jawOpen": 0.4295803904533386,
+          "mouthFunnel": 0.2147901952266693
+        }
+      },
+      {
+        "time": 7.1466666666666665,
+        "blendshapes": {
+          "jawOpen": 0.41143158078193665,
+          "mouthFunnel": 0.20571579039096832
+        }
+      },
+      {
+        "time": 7.168,
+        "blendshapes": {
+          "jawOpen": 0.4482469856739044,
+          "mouthFunnel": 0.2241234928369522
+        }
+      },
+      {
+        "time": 7.189333333333333,
+        "blendshapes": {
+          "jawOpen": 0.4316837191581726,
+          "mouthFunnel": 0.2158418595790863
+        }
+      },
+      {
+        "time": 7.210666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3780946135520935,
+          "mouthFunnel": 0.18904730677604675
+        }
+      },
+      {
+        "time": 7.232,
+        "blendshapes": {
+          "jawOpen": 0.288271963596344
+        }
+      },
+      {
+        "time": 7.253333333333333,
+        "blendshapes": {
+          "jawOpen": 0.1599576324224472
+        }
+      },
+      {
+        "time": 7.274666666666667,
+        "blendshapes": {
+          "jawOpen": 0.14190445840358734
+        }
+      },
+      {
+        "time": 7.296,
+        "blendshapes": {
+          "jawOpen": 0.17710211873054504
+        }
+      },
+      {
+        "time": 7.317333333333333,
+        "blendshapes": {
+          "jawOpen": 0.23808133602142334
+        }
+      },
+      {
+        "time": 7.338666666666667,
+        "blendshapes": {
+          "jawOpen": 0.303080290555954,
+          "mouthFunnel": 0.151540145277977
+        }
+      },
+      {
+        "time": 7.36,
+        "blendshapes": {
+          "jawOpen": 0.3416147232055664,
+          "mouthFunnel": 0.1708073616027832
+        }
+      },
+      {
+        "time": 7.381333333333333,
+        "blendshapes": {
+          "jawOpen": 0.3780899941921234,
+          "mouthFunnel": 0.1890449970960617
+        }
+      },
+      {
+        "time": 7.402666666666667,
+        "blendshapes": {
+          "jawOpen": 0.39395466446876526,
+          "mouthFunnel": 0.19697733223438263
+        }
+      },
+      {
+        "time": 7.424,
+        "blendshapes": {
+          "jawOpen": 0.3902019262313843,
+          "mouthFunnel": 0.19510096311569214
+        }
+      },
+      {
+        "time": 7.445333333333333,
+        "blendshapes": {
+          "jawOpen": 0.37672969698905945,
+          "mouthFunnel": 0.18836484849452972
+        }
+      },
+      {
+        "time": 7.466666666666667,
+        "blendshapes": {
+          "jawOpen": 0.3319404125213623,
+          "mouthFunnel": 0.16597020626068115
+        }
+      },
+      {
+        "time": 7.488,
+        "blendshapes": {
+          "jawOpen": 0.27641335129737854
+        }
+      },
+      {
+        "time": 7.509333333333333,
+        "blendshapes": {
+          "jawOpen": 0.2239682376384735
+        }
+      },
+      {
+        "time": 7.530666666666667,
+        "blendshapes": {
+          "jawOpen": 0.17684471607208252
+        }
+      },
+      {
+        "time": 7.552,
+        "blendshapes": {
+          "jawOpen": 0.13896425068378448
+        }
+      },
+      {
+        "time": 7.573333333333333,
+        "blendshapes": {
+          "jawOpen": 0.11052314192056656
+        }
+      },
+      {
+        "time": 7.594666666666667,
+        "blendshapes": {
+          "jawOpen": 0.07397057861089706
+        }
+      },
+      {
+        "time": 7.616,
+        "blendshapes": {
+          "jawOpen": 0.0441739447414875
+        }
+      },
+      {
+        "time": 7.637333333333333,
+        "blendshapes": {
+          "jawOpen": 0.015726890414953232
+        }
+      },
+      {
+        "time": 7.658666666666667,
+        "blendshapes": {
+          "jawOpen": 0.003957690205425024
+        }
+      },
+      {
+        "time": 7.68,
+        "blendshapes": {
+          "jawOpen": 0.0006418447010219097
+        }
+      },
+      {
+        "time": 7.701333333333333,
+        "blendshapes": {
+          "jawOpen": 0.00046355571248568594
+        }
+      },
+      {
+        "time": 7.722666666666667,
+        "blendshapes": {
+          "jawOpen": 0.0003091188846156001
+        }
+      },
+      {
+        "time": 7.744,
+        "blendshapes": {
+          "jawOpen": 0.0002762780641205609
+        }
+      },
+      {
+        "time": 7.765333333333333,
+        "blendshapes": {
+          "jawOpen": 0.00027180396136827767
+        }
+      },
+      {
+        "time": 7.786666666666667,
+        "blendshapes": {
+          "jawOpen": 0.00027072810917161405
+        }
+      },
+      {
+        "time": 7.808,
+        "blendshapes": {
+          "jawOpen": 0.00026947102742269635
+        }
+      },
+      {
+        "time": 7.8293333333333335,
+        "blendshapes": {
+          "jawOpen": 0.0002693156129680574
+        }
+      },
+      {
+        "time": 7.850666666666666,
+        "blendshapes": {
+          "jawOpen": 0.0002696716692298651
+        }
+      },
+      {
+        "time": 7.872,
+        "blendshapes": {
+          "jawOpen": 0.0002697925956454128
+        }
+      },
+      {
+        "time": 7.8933333333333335,
+        "blendshapes": {
+          "jawOpen": 0.00027005502488464117
+        }
+      },
+      {
+        "time": 7.914666666666666,
+        "blendshapes": {
+          "jawOpen": 0.0002707575331442058
+        }
+      },
+      {
+        "time": 7.936,
+        "blendshapes": {
+          "jawOpen": 0.0002719690673984587
+        }
+      },
+      {
+        "time": 7.957333333333334,
+        "blendshapes": {
+          "jawOpen": 0.00027189168031327426
+        }
+      },
+      {
+        "time": 7.978666666666666,
+        "blendshapes": {
+          "jawOpen": 0.0002719901967793703
+        }
+      },
+      {
+        "time": 8.0,
+        "blendshapes": {
+          "jawOpen": 0.0002449377498123795
+        }
+      },
+      {
+        "time": 8.021333333333333,
+        "blendshapes": {
+          "jawOpen": 0.00020263349870219827
+        }
+      },
+      {
+        "time": 8.04,
+        "blendshapes": {
+          "jawOpen": 0.0,
+          "mouthFunnel": 0.0
+        }
+      }
+    ],
+    "engine": "librosa",
+    "frame_count": 378
+  },
+  "animation_config": {
+    "use_blendshapes": true,
+    "loop": false,
+    "speed": 1.0
+  }
+}

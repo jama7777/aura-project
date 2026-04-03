@@ -1,0 +1,16 @@
+{
+  "audio_url": "/audio/output_05260235.mp3",
+  "text": "I sense a bit of frustration! Don't worry, I'm here to help you understand the benefits of this virtual interview. One major advantage is that it allows us to simulate a real interview in a more comfortable and convenient setting. You can practice your responses, and I can provide you with personalized feedback to help you improve. Plus, it's a great way to reduce those pesky interview jitters!",
+  "metadata": {
+    "duration": 29.568,
+    "sample_rate": 24000,
+    "n_samples": 709632,
+    "engine": "librosa",
+    "timestamps": null
+  },
+  "animation_config": {
+    "use_blendshapes": true,
+    "loop": false,
+    "speed": 1.0
+  }
+}

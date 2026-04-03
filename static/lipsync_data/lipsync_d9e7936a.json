@@ -1,0 +1,16 @@
+{
+  "audio_url": "/audio/output_583acc5f.mp3",
+  "text": "I understand your concern, Jamadagni! As a digital AI companion, I don't have the ability to see you, but I can still pick up on cues from your tone and language. If I sense dishonesty or uncertainty, I can respond in a way that encourages you to open up or clarify your thoughts. My goal is to provide a supportive and non-judgmental space for you to express yourself, even if we're not in the same physical space.",
+  "metadata": {
+    "duration": 31.944,
+    "sample_rate": 24000,
+    "n_samples": 766656,
+    "engine": "librosa",
+    "timestamps": null
+  },
+  "animation_config": {
+    "use_blendshapes": true,
+    "loop": false,
+    "speed": 1.0
+  }
+}

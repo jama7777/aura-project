@@ -1,0 +1,90 @@
+{
+  "audio_url": "/audio/output_f8460b1a.mp3",
+  "text": "Thank you for explaining the difference between var, let, and const in JavaScript, Jamadagni. It's great that you covered the best practices and provided examples for each.\n\nHowever, I'd like to probe a bit deeper. Can you explain why you said \"var is the original way to declare variables but is largely deprecated in modern development due to its unforgivable behavior\"? What exactly do you mean by \"unforgivable behavior\", and how does it differ from let and const?",
+  "metadata": {
+    "duration": 35.328,
+    "sample_rate": 24000,
+    "frames": [
+      {
+        "time": 0.0,
+        "blendshapes": {
+          "jawOpen": 0.0
+        }
+      },
+      {
+        "time": 0.021333333333333333,
+        "blendshapes": {
+          "jawOpen": 9.255775694327895e-06
+        }
+      },
+      {
+        "time": 0.042666666666666665,
+        "blendshapes": {
+          "jawOpen": 0.0034844435285776854
+        }
+      },
+      {
+        "time": 0.064,
+        "blendshapes": {
+          "jawOpen": 0.006494641769677401
+        }
+      },
+      {
+        "time": 0.08533333333333333,
+        "blendshapes": {
+          "jawOpen": 0.010002262890338898
+        }
+      },
+      {
+        "time": 0.10666666666666667,
+        "blendshapes": {
+          "jawOpen": 0.014949445612728596
+        }
+      },
+      {
+        "time": 0.128,
+        "blendshapes": {
+          "jawOpen": 0.021045919507741928
+        }
+      },
+      {
+        "time": 0.14933333333333335,
+        "blendshapes": {
+          "jawOpen": 0.023589449003338814
+        }
+      },
+      {
+        "time": 0.17066666666666666,
+        "blendshapes": {
+          "jawOpen": 0.02327716536819935
+        }
+      },
+      {
+        "time": 0.192,
+        "blendshapes": {
+          "jawOpen": 0.03153083473443985
+        }
+      },
+      {
+        "time": 0.21333333333333335,
+        "blendshapes": {
+          "jawOpen": 0.039905399084091187
+        }
+      },
+      {
+        "time": 0.23466666666666666,
+        "blendshapes": {
+          "jawOpen": 0.0511876679956913
+        }
+      },
+      {
+        "time": 0.256,
+        "blendshapes": {
+          "jawOpen": 0.16423307359218597
+        }
+      },
+      {
+        "time": 0.2773333333333333,
+        "blendshapes": {
+          "jawOpen": 0.5356611013412476,
+          "mouthFunnel": 
