@@ -185,8 +185,12 @@ def analyze_text_sentiment(text: str) -> str:
             results = text_emotion_classifier(text)
             # Result is a list of dicts: [{'label': 'joy', 'score': 0.99}]
             if results and isinstance(results, list):
-                label = results[0]['label'].lower()
-                score = results[0]['score']
+                # Handle both list and nested list formats from transformers
+                data = results[0]
+                if isinstance(data, list): data = data[0]
+                
+                label = data.get('label', 'neutral').lower()
+                score = data.get('score', 0)
 
                 # Map distilroberta-base-emotion labels to AURA core
                 label_map = {

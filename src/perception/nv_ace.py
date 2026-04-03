@@ -142,8 +142,9 @@ class NvidiaACEClient:
                 # It's a message type `EndOfAudio`.
                 yield messages_pb2.AudioWithEmotionStream(end_of_audio=messages_pb2.AudioWithEmotionStream.EndOfAudio())
 
-            # Call API with timeout to prevent permanent server freeze on external API hang
-            response_stream = self.stub.ProcessAudioStream(request_generator(), timeout=15.0)
+            # Call API with short timeout to ensure FAST response generation.
+            # If ACE times out, the frontend will fall back to reactive volume-based lip sync.
+            response_stream = self.stub.ProcessAudioStream(request_generator(), timeout=2.5)
             
             # Process Responses
             animations = []

@@ -14,11 +14,13 @@ const WIN_THRESHOLD = 0.22;  // min % of window votes to accept dominant emotion
 const STABLE_MS = 550;   // ms emotion must hold before firing onEmotion
 
 // Head-turn detection thresholds
-const HEAD_TURN_RATIO = 0.40;  // eye asymmetry ratio that indicates a turn (lower = less sensitive)
-const HEAD_TURN_MS   = 700;    // ms head must be turned before firing callback
+// 0.28 = only fires on STRONG turns (e.g. looking far left/right away from screen).
+// 0.40 was too sensitive and fired when user was just slightly angled.
+const HEAD_TURN_RATIO = 0.28;  // lower = less sensitive (stronger turn needed)
+const HEAD_TURN_MS   = 1500;   // must hold turn 1.5s before callback fires
 
 // ─── FaceEmotionDetector ──────────────────────────────────────────────────────
-export class FaceEmotionDetector {
+class FaceEmotionDetector {
     constructor() {
         this._timer = null;
         this._history = [];        // string[] of winning labels per frame
@@ -31,6 +33,7 @@ export class FaceEmotionDetector {
         this._onEmotion = null;
         this._onDebug = null;
         this._onHeadTurn = null;   // v4: callback for head-turn
+        this._onInattention = null; // v5: callback for looking away/no-face
         this.ready = false;
         this._frameCount = 0;
 
@@ -40,6 +43,11 @@ export class FaceEmotionDetector {
         this._headTurnDir = null;     // 'left' | 'right' | null
         this._isPaused = false;       // v4.1: pause entirely
         this._isSlowMode = false;     // v4.1: throttle for performance (e.g. while recording)
+
+        // Inattention tracking
+        this._lastFaceSeen = Date.now();
+        this._inattentionFired = false;
+        this._INATTENTION_MS = 6000;  // 6s of looking away/no-face
     }
 
     /** Set callback for sustained-emotion events: cb(emotion, confidence, scores) */
@@ -54,11 +62,23 @@ export class FaceEmotionDetector {
      */
     onHeadTurn(cb) { this._onHeadTurn = cb; }
 
-    /** Reset head-turn state (call after AURA reacts so she doesn't spam) */
-    resetHeadTurn() {
+    /**
+     * v5: Set callback for inattention/looking away.
+     */
+    onInattention(cb) { this._onInattention = cb; }
+
+    /** Reset head-turn and inattention state (call after AURA reacts so she doesn't spam) */
+    resetAttention() {
         this._headTurnStart = null;
         this._headTurnFired = false;
         this._headTurnDir = null;
+        this._lastFaceSeen = Date.now();
+        this._inattentionFired = false;
+    }
+
+    /** Reset head-turn state (backwards compatibility) */
+    resetHeadTurn() {
+        this.resetAttention();
     }
 
     /** v4.1: Pause detection to save CPU */
@@ -76,8 +96,9 @@ export class FaceEmotionDetector {
         this._video = videoElement;
         this.ready = true;
         this._stableStart = Date.now();
+        this._lastFaceSeen = Date.now();
         this._schedule();
-        console.log('[FaceEmotion v4] Detector started');
+        console.log('[FaceEmotion v5] Detector started');
     }
 
     stop() {
@@ -85,8 +106,8 @@ export class FaceEmotionDetector {
         this._timer = null;
         this.ready = false;
         this._history = [];
-        this.resetHeadTurn();
-        console.log('[FaceEmotion v4] Detector stopped');
+        this.resetAttention();
+        console.log('[FaceEmotion v5] Detector stopped');
     }
 
     // ─── Internal loop ─────────────────────────────────────────────────────────
@@ -110,8 +131,8 @@ export class FaceEmotionDetector {
 
         try {
             const opts = new faceapi.TinyFaceDetectorOptions({
-                inputSize: 320,
-                scoreThreshold: 0.25
+                inputSize: 416,     // Increased from 320 for better detection
+                scoreThreshold: 0.15 // Lowered from 0.25 for better sensitivity
             });
 
             // v4.1: If landmarker model failed to load, we skip it and just do expressions.
@@ -129,6 +150,9 @@ export class FaceEmotionDetector {
             if (det) {
                 this._frameCount++;
                 this._processDetection(det.expressions);
+                this._lastFaceSeen = Date.now();
+                this._inattentionFired = false;
+
                 if (hasLandmarks && det.landmarks) {
                     this._processHeadTurn(det.landmarks);
                 }
@@ -136,13 +160,22 @@ export class FaceEmotionDetector {
                 // No face found
                 this._pushLabel('neutral', 0);
                 if (this._onDebug) this._onDebug(null, null);
-                // Reset head-turn timer when face is lost (separate from inattention)
+                
+                // Head-turn reset
                 this._headTurnStart = null;
                 this._headTurnFired = false;
                 this._headTurnDir = null;
+
+                // Inattention check
+                const now = Date.now();
+                if (!this._inattentionFired && (now - this._lastFaceSeen) >= this._INATTENTION_MS) {
+                    this._inattentionFired = true;
+                    if (this._onInattention) this._onInattention();
+                    console.log(`[FaceEmotion v5] ⚠️ Inattention detected: User left camera or looked away.`);
+                }
             }
         } catch (e) {
-            console.warn('[FaceEmotion v4] Detection error:', e.message);
+            console.warn('[FaceEmotion v5] Detection error:', e.message);
         }
 
         this._schedule();
@@ -213,7 +246,7 @@ export class FaceEmotionDetector {
                 // Held long enough → fire callback
                 this._headTurnFired = true;
                 if (this._onHeadTurn) this._onHeadTurn(turnDir);
-                console.log(`[FaceEmotion v4] 🔄 Head turned: ${turnDir}`);
+                console.log(`[FaceEmotion v5] 🔄 Head turned: ${turnDir}`);
             }
         } else {
             // Head straight — reset
@@ -305,3 +338,6 @@ export class FaceEmotionDetector {
     get confidence() { return this._confidence; }
     get frameCount() { return this._frameCount; }
 }
+
+// Global instance for the app — must be set BEFORE main.js runs
+window.faceDetector = new FaceEmotionDetector();

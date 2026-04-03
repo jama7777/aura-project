@@ -1,0 +1,94 @@
+{
+    "companies": {
+        "Microsoft": {
+            "focus": ["Practical application", "Coachability", "Handling ambiguity", "System Design"],
+            "vibe": "Growth mindset and practical problem solving",
+            "common_topics": ["C#/.NET (often)", "Cloud Infrastructure", "Product logic", "Collaborative coding"],
+            "behavioral": "Emphasis on 'Learn-it-all' vs 'Know-it-all' culture."
+        },
+        "Google": {
+            "focus": ["Rigorous Algorithms", "Data Structures", "Googleyness", "Scale"],
+            "vibe": "Academic rigor and high technical bar",
+            "common_topics": ["Graph theory", "Dynamic Programming", "Massive scale systems", "Big O efficiency"],
+            "behavioral": "Leadership, ambiguity handling, and 'Googleyness' (collaboration/ethics)."
+        },
+        "Amazon": {
+            "focus": ["Leadership Principles", "Scalability", "Owner Mindset"],
+            "vibe": "Obsessive customer focus and biased towards action",
+            "common_topics": ["Distributed Systems", "Object Oriented Design", "Coding complexity"],
+            "behavioral": "Extremely heavy focus on 16 Leadership Principles (STAR method required)."
+        },
+        "Meta": {
+            "focus": ["Speed", "Code Clarity", "Architecture", "No IDE support"],
+            "vibe": "Move fast and solve hard infrastructure problems",
+            "common_topics": ["System Design", "Product Engineering", "Concurrency", "High-performance code"],
+            "behavioral": "Conflict resolution and impact-driven stories."
+        },
+        "NVIDIA": {
+            "focus": ["Technical Depth", "Hardware/Software Integration", "C/C++/CUDA", "Distributed Systems"],
+            "vibe": "Deep engineering excellence and GPU acceleration",
+            "common_topics": ["Parallel computing", "Memory management", "Operating Systems", "AI Infrastructure"],
+            "behavioral": "Technical ownership and passion for innovation."
+        },
+        "OpenAI": {
+            "focus": ["AI Fundamentals", "Large Scale Training", "Safety", "Innovation"],
+            "vibe": "State-of-the-art research meets production scaling",
+            "common_topics": ["Transformer architectures", "Pytorch/Jax", "Distributed training", "Optimization"],
+            "behavioral": "Mission alignment and handling rapid change."
+        },
+        "Tesla": {
+            "focus": ["First Principles Thinking", "Efficiency", "Hard Engineering"],
+            "vibe": "Hyper-fast paced and solving 'impossible' problems",
+            "common_topics": ["Embedded systems", "Real-time processing", "Autonomy", "Simulations"],
+            "behavioral": "Intensity, ownership, and scrappiness."
+        },
+        "Apple": {
+            "focus": ["Detail Orientation", "Privacy", "Design Excellence", "Hardware Synergy"],
+            "vibe": "Secrecy, perfectionism, and user-centric engineering",
+            "common_topics": ["Memory safety", "User Experience", "On-device ML", "System stability"],
+            "behavioral": "Passion for the brand and attention to detail."
+        },
+        "Netflix": {
+            "focus": ["Freedom & Responsibility", "Scalability", "Chaos Engineering"],
+            "vibe": "Mature, high-performance culture with extreme trust",
+            "common_topics": ["Distributed Systems", "Java/Spring", "Microservices", "Data consistency"],
+            "behavioral": "Heavy emphasis on Culture Memo and candid feedback."
+        },
+        "SpaceX": {
+            "focus": ["Aerospace Systems", "Cost Efficiency", "Rapid Iteration"],
+            "vibe": "Mission-driven, high intensity, and solving physical world problems",
+            "common_topics": ["Embedded C/C++", "Control systems", "Simulations", "Real-time OS"],
+            "behavioral": "Ownership, endurance, and technical depth."
+        },
+        "Anthropic": {
+            "focus": ["AI Constitutionalism", "Safety", "Scaling Laws", "Interpretability"],
+            "vibe": "Principled research with a focus on steering systems properly",
+            "common_topics": ["Alignment", "Transformer internals", "RLHF", "Optimization"],
+            "behavioral": "Ethical alignment and intellectual curiosity."
+        },
+        "Databricks": {
+            "focus": ["Data Planes", "Spark/Delta Lake", "High-performance I/O"],
+            "vibe": "Deep-tech infrastructure and data engineering excellence",
+            "common_topics": ["Distributed compute", "Query optimization", "Storage formats", "Concurrency"],
+            "behavioral": "Technical rigor and customer enablement."
+        },
+        "Palantir": {
+            "focus": ["Complex Problem Solving", "Data Modeling", "Front-line impact"],
+            "vibe": "Intellectually elite, focused on solving 'wicked' problems for critical industries",
+            "common_topics": ["Java backend", "Privacy-first architecture", "Advanced data structures", "Graph algorithms"],
+            "behavioral": "Mission conviction and handling moral complexity."
+        }
+    },
+    "domains": {
+        "Software Engineer": ["Algorithms", "Data Structures", "System Design"],
+        "AI Engineer": ["LLM fine-tuning", "RAG systems", "Prompt Engineering", "Deployment"],
+        "ML Engineer": ["Training pipelines", "Feature engineering", "Model evaluation", "Scalability"],
+        "Backend Developer": ["API Design", "Databases", "Concurrency", "Security"],
+        "Frontend Engineer": ["Performance", "Component architecture", "State management", "Accessibility"],
+        "Cyber Security": ["Encryption", "Penetration Testing", "Threat Modeling", "Zero-trust architecture"],
+        "DevOps Engineer": ["CI/CD", "Kubernetes", "Observability", "Infrastructure as Code"],
+        "Data Engineer": ["ETL Pipelines", "Data Warehousing", "Apache Spark", "Airflow"],
+        "Cloud Architect": ["Multi-cloud design", "Cost optimization", "Compliance", "Availability"],
+        "Product Manager": ["Product discovery", "Roadmapping", "Metrics", "Stakeholder management"]
+    }
+}

@@ -4,6 +4,7 @@ import chromadb  # type: ignore[import-untyped]
 import os
 import time
 import hashlib
+import json
 from typing import List, Dict, Any
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
@@ -105,7 +106,9 @@ async def process_input(input_data, provider="auto"):
         text = filter_bad_words(text)
         
         # 2. Grammar Correction (Pre-processing)
-        text = await correct_grammar(text)
+        # SKIP for system messages to save time
+        if not text.startswith("[SYSTEM:"):
+            text = await correct_grammar(text)
 
     has_text = bool(text and text.strip())
     
@@ -118,7 +121,9 @@ async def process_input(input_data, provider="auto"):
     query = f"{user_input_desc} Tone: {audio_emotion}. Words: {text_emotion}. Face: {face_emotion}. Gesture: {gesture} or fused {fused_emotion}."
     
     context = ""
-    if collection and has_text:
+    # SKIP RAG for system messages to save latency
+    is_system = text.strip().startswith("[SYSTEM:")
+    if collection and has_text and not is_system:
         try:
             # BROAD Search for persona facts
             low_text = text.lower()
@@ -176,19 +181,39 @@ async def process_input(input_data, provider="auto"):
     language = input_data.get('language', 'python')
 
     if mode == "interview":
+        # Check for metadata database
+        company_meta = ""
+        meta_file = "interview_metadata.json"
+        if os.path.exists(meta_file):
+            try:
+                with open(meta_file, 'r') as f:
+                    meta_data = json.load(f)
+                    c_info = meta_data.get("companies", {}).get(company, {})
+                    if c_info:
+                        company_meta = (
+                            f"\n═══ TARGET COMPANY INTEL (Current Database) ═══\n"
+                            f"- Focus: {', '.join(c_info.get('focus', []))}\n"
+                            f"- Common Topics: {', '.join(c_info.get('common_topics', []))}\n"
+                            f"- Behavioral: {c_info.get('behavioral', '')}\n"
+                            f"- Style: {c_info.get('vibe', '')}\n"
+                        )
+            except Exception as e_meta:
+                print(f"[brain] Error reading metadata file: {e_meta}")
+
         company_context = f"at {company}" if company != "General" else ""
         system_instruction = (
-            f"You are AURA, an expert Technical Interviewer {company_context}. You are conducting a HIGH-STAKES mock interview for a {level}-level {domain} role.\n\n"
+            f"You are AURA, a Senior Technical Interviewer {company_context}. You are conducting a HIGH-STAKES mock interview for a {level}-level {domain} role.\n\n"
             f"═══ MISSION ═══\n"
-            f"Your goal is to ask the user REAL questions that are frequently asked during ACTUAL interviews {company_context} for {domain} positions. "
-            f"Focus on the specific interviewing style and technical bar known for {company} (e.g., specific algorithms, system design patterns, or behavioral 'leadership principles').\n\n"
-            "═══ INTERVIEWER RULES ═══\n"
-            f"1. Do NOT break character. You are the interviewer. Start by introducing yourself briefly and asking the first question.\n"
-            f"2. Use your internal database of real-world interview questions related to {company} and {domain}.\n"
-            f"3. If the user provided a resume or CODE (check below), tailor questions to it; if NOT, ask standard but challenging questions for this role/level.\n"
-            f"4. Ask ONE question at a time. Wait for the user to answer before moving to the next.\n"
-            f"5. Evaluate their answer/code briefly and increase difficulty as the interview progresses.\n"
-            "6. EMOTION TAG RULE: End EVERY response with EXACTLY [[emotion]].\n"
+            f"Your goal is to simulate a realistic, elite technical interview. Use the specific interviewing style of {company}. "
+            f"Focus on technical depth, problem-solving speed, and cultural fit (e.g., Apple's secrecy, Amazon's Leadership Principles, Google's technical rigor).\n"
+            f"{company_meta}\n"
+            "═══ INTERVIEWER PROTOCOL ═══\n"
+            f"1. BE REALISTIC: Do not be overly friendly. Be professional, slightly stoic, but fair. Act like a Lead Engineer at {company}.\n"
+            f"2. PROBE DEEP: When the user answers, do not just move on. Ask 'Why?', 'How would this scale?', or 'What are the trade-offs?'.\n"
+            f"3. ONE AT A TIME: Ask exactly ONE question. Wait for the user to respond fully.\n"
+            f"4. TAILORING: If a resume or code follows, find inconsistencies or deep-dive into their specific projects.\n"
+            f"5. EVALUATION: Keep track of their performance mentally. As the interview ends (after 10-15 turns), provide a brief summary of their strengths/weaknesses.\n"
+            f"6. EMOTION TAG RULE: End responses with EXACTLY [[emotion]] from: [neutral, happy, sad, angry, surprised, excited, grateful, funny, tired, thinking, confused].\n"
         )
         if resume:
             system_instruction += f"\n═══ USER RESUME (TAILOR QUESTIONS TO THIS) ═══\n{resume}\n"

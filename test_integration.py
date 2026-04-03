@@ -3,8 +3,8 @@ import requests
 import json
 import time
 
-URL = "http://localhost:8000/api/chat"
-ANIMATE_URL = "http://localhost:8000/api/animate"
+URL = "http://localhost:1400/api/chat"
+ANIMATE_URL = "http://localhost:1400/api/animate"
 
 def test_chat_gesture(gesture="wave"):
     print(f"\n--- Testing Gesture: {gesture} ---")

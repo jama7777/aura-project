@@ -463,7 +463,15 @@ async def upload_resume(file: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.post("/api/voice-chat")
-async def upload_audio(file: UploadFile = File(...), face_emotion: str = Form("neutral"), gesture: str = Form("none"), mode: str = Form("normal"), level: str = Form("mid"), company: str = Form("General"), domain: str = Form("Software Engineer")):
+async def upload_audio(
+    file: UploadFile = File(...), 
+    face_emotion: Optional[str] = Form("neutral"),
+    gesture: Optional[str] = Form("none"),
+    mode: Optional[str] = Form("normal"),
+    level: Optional[str] = Form("mid"),
+    company: Optional[str] = Form("General"),
+    domain: Optional[str] = Form("Software Engineer")
+):
     try:
         import subprocess
         
@@ -760,8 +768,10 @@ async def get_audio(filename: str):
         # Then check in dedicated output folder
         file_path = os.path.abspath(os.path.join("output", filename))
 
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
+    if (os.path.exists(file_path)):
+        # Explicitly set media type for wav/mp3 to prevent browser confusion
+        mtype = "audio/wav" if filename.lower().endswith(".wav") else "audio/mpeg"
+        return FileResponse(file_path, media_type=mtype)
     
     print(f"[Audio endpoint] File not found: {file_path}")
     raise HTTPException(status_code=404, detail="File not found")

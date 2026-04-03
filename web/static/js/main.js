@@ -1,296 +1,123 @@
-import * as THREE from 'three';
-import { Avatar } from './avatar.js?v=48';
-import { FaceEmotionDetector } from './face_emotion.js';
+/**
+ * AURA - Main Application Logic
+ * Integrates Chat, Voice, Emotion Detection and 3D Avatar
+ */
 
-const avatar = new Avatar();
-window.avatar = avatar; // Debugging
-let currentEmotion = "off";
+let avatar = null;
+let currentInterviewMeta = { mode: 'normal', level: 'mid', company: 'General', domain: 'Software Engineer' };
+let selectedCompany = 'General';
+let _inputLocked = false;
 
-// Emotion Trigger State
-let lastTriggeredEmotion = null;
-let emotionStartTime = 0;
-let emotionCooldown = 0;
-
-// Coding Workspace State
-let editor = null;
-let currentCode = ""; 
-let selectedCompany = "General"; // Dashboard State
-
-// ── MONACO EDITOR CONFIG ───────────────────────────────────────────────────
-function initMonaco() {
-    if (editor) return;
-    const container = document.getElementById('monaco-container');
-    if (!container) {
-        log("[Monaco] Error: Container not found!");
-        return;
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Initialize Avatar
+    if (typeof AuraAvatar === 'function') {
+        avatar = new AuraAvatar('canvas-container');
+        avatar.init();
     }
 
-    log("[Monaco] Loading dependencies...");
-    if (typeof require === 'undefined') {
-        log("[Monaco] Error: require.js loader not found. Check index.html head.");
-        return;
-    }
-
-    require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
-    require(['vs/editor/editor.main'], function () {
-        try {
-            editor = monaco.editor.create(container, {
-                value: [
-                    '# Type your interview code here',
-                    'def solution(arr):',
-                    '    # AURA will see your progress when you "Sync"',
-                    '    return sorted(arr)',
-                    '',
-                    'print(solution([3, 1, 4]))'
-                ].join('\n'),
-                language: 'python',
-                theme: 'vs-dark',
-                fontSize: 14,
-                automaticLayout: true,
-                minimap: { enabled: false },
-                roundedSelection: true,
-                scrollBeyondLastLine: false,
-                padding: { top: 20 },
-                fontFamily: "'Fira Code', 'Cascadia Code', monospace"
-            });
-            log("[Monaco] SUCCESS: Editor initialized.");
-
-            // Sync button logic
-            const syncBtn = document.getElementById('sync-code-btn');
-            if (syncBtn) {
-                syncBtn.addEventListener('click', () => {
-                    log("[Monaco] Sync button clicked.");
-                    currentCode = editor.getValue();
-                    _showNotification("Code Synced with AURA", "#6c5ce7");
-                    
-                    // Trigger a sync message if in interview mode
-                    const modeCb = document.getElementById('mode-cb');
-                    if (modeCb && modeCb.checked) {
-                        triggerCodeSyncChat();
-                    }
-                });
-            }
-
-            // Language selector logic
-            const langSelect = document.getElementById('code-lang-select');
-            if (langSelect) {
-                langSelect.addEventListener('change', () => {
-                    const lang = langSelect.value;
-                    monaco.editor.setModelLanguage(editor.getModel(), lang);
-                    log(`[Monaco] Language changed to: ${lang}`);
-                });
-            }
-
-            // Run button (Visual Feedback)
-            const runBtn = document.getElementById('run-code-btn');
-            const statusText = document.getElementById('code-status');
-            if (runBtn) {
-                runBtn.addEventListener('click', () => {
-                    runBtn.textContent = 'Running...';
-                    statusText.textContent = 'Executing locally...';
-                    setTimeout(() => {
-                        runBtn.textContent = 'Run Code';
-                        statusText.textContent = 'Execution complete (Local Mock).';
-                        _showNotification("Local Execution Complete", "#00ff88");
-                    }, 1000);
-                });
-            }
-        } catch (err) {
-            log(`[Monaco] Critical Init Error: ${err.message}`);
-        }
-    });
-}
-
-function triggerCodeSyncChat() {
-    if (!acquireInputLock('text')) return;
-    const meta = getInterviewMetadata();
+    // 2. Initialize UI Components
+    initChatUI();
+    initInterviewUI();
+    initVoiceSelector();
+    initFaceDetector();
+    initCodeEditor();
     
-    log("[Monaco] Triggering sync chat message...");
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            text: "I've updated my code in the IDE. Can you take a look?",
-            code: editor.getValue(),
-            language: document.getElementById('code-lang-select').value,
-            mode: meta.mode,
-            level: meta.level,
-            company: meta.company,
-            domain: meta.domain
-        })
-    })
-    .then(r => r.json())
-    .then(data => handleResponse(data))
-    .catch(e => {
-        log(`Error syncing code: ${e.message}`);
-        releaseInputLock();
-    });
+    // Auto-resume audio on any interaction to prevent browser silencing
+    document.addEventListener('mousedown', () => {
+        if (_audioCtx && _audioCtx.state === 'suspended') {
+            log('Resuming AudioContext on interaction...');
+            _audioCtx.resume();
+        }
+    }, { once: false });
+    
+    // 3. Welcome Message (Delayed)
+    setTimeout(() => {
+        _showNotification("AURA System Online", "#00ff88");
+        addMessage("Hello! I am AURA. I can help you with your interview preparation. How can I assist you today?", 'aura');
+    }, 1500);
+});
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────
+function _showNotification(text, color = "#6c5ce7") {
+    const note = document.createElement('div');
+    note.className = 'status-notification';
+    note.style.borderLeftColor = color;
+    // HIDDEN WEBCAM FOR DETECTION: Must have real dimensions for face-api.js to process frames
+    if (!document.getElementById('webcam-video')) {
+        const video = document.createElement('video');
+        video.id = 'webcam-video';
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.width = 320;
+        video.height = 240;
+        video.style.position = 'fixed';
+        video.style.top = '-9999px';
+        video.style.left = '-9999px';
+        video.style.width = '320px';
+        video.style.height = '240px';
+        video.style.opacity = '0';
+        video.style.pointerEvents = 'none';
+        document.body.appendChild(video);
+    }
+    note.innerHTML = `<span style="color:${color}; font-weight:bold; margin-right:8px;">●</span> ${text}`;
+    document.body.appendChild(note);
+    setTimeout(() => note.style.opacity = '1', 10);
+    setTimeout(() => {
+        note.style.opacity = '0';
+        setTimeout(() => note.remove(), 500);
+    }, 3000);
 }
 
-// ── INPUT LOCK (MUTEX) ───────────────────────────────────────────────────────
-let _inputLocked = false;   // true = a request is already in flight
-let _lockSource = null;    // ('text'|'voice'|'gesture'|'emotion')
+function log(msg) { console.log(`[AURA] ${msg}`); }
 
 function acquireInputLock(source) {
     if (_inputLocked) {
-        if ((source === 'text' || source === 'voice') && _lockSource === 'emotion') {
-            log(`[InputLock] 🔓 Manual "${source}" bypassing background "emotion" lock.`);
-            _lockSource = source; 
-            return true;
-        }
-        log(`[InputLock] 🔒 Blocked "${source}" — "${_lockSource}" is still processing.`);
-        _showBusyHint(source);
+        log(`Input locked by ${_lockSource}, rejecting ${source}`);
         return false;
     }
     _inputLocked = true;
     _lockSource = source;
-    log(`[InputLock] 🔓 Lock acquired by: ${source}`);
-    _showProcessingIndicator(source);
+    log(`Input locked by ${source}`);
     return true;
 }
 
 function releaseInputLock() {
-    log(`[InputLock] 🔓 Lock released (was: ${_lockSource})`);
+    log(`Input released from ${_lockSource}`);
     _inputLocked = false;
     _lockSource = null;
-    isAuraTalking = false;
-    lastTriggeredEmotion = null;
-    emotionStartTime = Date.now();
-    emotionCooldown = Date.now();
-    _hideProcessingIndicator();
-}
-
-function _showProcessingIndicator(source) {
-    let badge = document.getElementById('input-lock-badge');
-    if (!badge) {
-        badge = document.createElement('div');
-        badge.id = 'input-lock-badge';
-        badge.style.cssText = 'position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(108,92,231,0.85);color:#fff;font-size:12px;padding:4px 14px;border-radius:20px;z-index:200;pointer-events:none;transition:opacity .3s;font-weight:600;letter-spacing:0.5px;box-shadow:0 2px 12px rgba(108,92,231,0.6)';
-        document.getElementById('ui-overlay').appendChild(badge);
+    
+    // Process queued system message if exists
+    if (_pendingSystemMessage) {
+        const msg = _pendingSystemMessage;
+        _pendingSystemMessage = null;
+        log(`Processing queued system message: ${msg.substring(0, 30)}...`);
+        // Small delay so she doesn't start instantly/unnaturally
+        setTimeout(() => {
+            if (!_inputLocked) sendMessage(null, msg);
+        }, 1200);
     }
-    const icons = { text: '💬', voice: '🎤', gesture: '👋', emotion: '😊' };
-    badge.textContent = `${icons[source] || '⏳'} Processing ${source}…`;
-    badge.style.opacity = '1';
-    badge.style.display = 'block';
+    document.getElementById('mic-btn').classList.remove('pulse');
+    document.getElementById('mic-btn').classList.remove('recording-active');
+    document.getElementById('mic-btn').style.color = 'white';
+    document.getElementById('send-btn').style.opacity = "1";
 }
 
-function _hideProcessingIndicator() {
-    const badge = document.getElementById('input-lock-badge');
-    if (badge) { badge.style.opacity = '0'; setTimeout(() => { badge.style.display = 'none'; }, 300); }
-}
-
-function _showBusyHint(source) {
-    let hint = document.getElementById('input-busy-hint');
-    if (!hint) {
-        hint = document.createElement('div');
-        hint.id = 'input-busy-hint';
-        hint.style.cssText = 'position:absolute;top:40px;left:50%;transform:translateX(-50%);background:rgba(255,68,68,0.85);color:#fff;font-size:11px;padding:3px 12px;border-radius:16px;z-index:200;pointer-events:none;transition:opacity .4s';
-        document.getElementById('ui-overlay').appendChild(hint);
-    }
-    hint.textContent = `⏳ Wait — ${_lockSource} is processing…`;
-    hint.style.opacity = '1';
-    hint.style.display = 'block';
-    setTimeout(() => {
-        hint.style.opacity = '0';
-        setTimeout(() => { hint.style.display = 'none'; }, 400);
-    }, 1800);
-}
-
-// ── TALKING GUARD ──────────────────────────────────────────────────────────
-let isAuraTalking = false;
-let currentAbortController = null;
-window._setAuraTalking = (v) => { isAuraTalking = v; };
-
-function stopAuraSpeech() {
-    if (window.currentAudio) {
-        window.currentAudio.pause();
-        window.currentAudio.src = "";
-        window.currentAudio = null;
-    }
-    isAuraTalking = false;
-    if (window.avatar) {
-        window.avatar.setTalking(false);
-        window.avatar.resetFace();
-    }
-    stopFaceSync();
-}
-
-function _showNotification(message, color = "#6c5ce7") {
-    let toast = document.getElementById('aura-notification');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'aura-notification';
-        toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 24px;border-radius:12px;color:white;font-weight:600;z-index:9999;transition:all 0.4s;box-shadow:0 10px 30px rgba(0,0,0,0.3);font-size:14px;display:none;opacity:0';
-        document.body.appendChild(toast);
-    }
-    toast.textContent = message;
-    toast.style.backgroundColor = color;
-    toast.style.display = 'block';
-    requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateY(0)';
-    });
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => toast.style.display = 'none', 400);
-    }, 3000);
-}
-
-// ========== MICROPHONE & RECORDING ==========
-let isRecording = false;
-let mediaRecorder = null;
-let recordedChunks = [];
-let audioStream = null;
-
-function log(msg) { console.log('[AURA]', msg); }
-
-document.addEventListener('DOMContentLoaded', async () => {
-    avatar.init();
-    await loadFaceAPI();
-    initInterviewUI();
-    setupEventListeners();
-});
-
-async function loadFaceAPI() {
-    try {
-        await faceapi.nets.tinyFaceDetector.loadFromUri('/face-models');
-        await faceapi.nets.faceExpressionNet.loadFromUri('/face-models');
-    } catch (e) {
-        const cdn = 'https://justadudewhohacks.github.io/face-api.js/models';
-        await faceapi.nets.tinyFaceDetector.loadFromUri(cdn);
-        await faceapi.nets.faceExpressionNet.loadFromUri(cdn);
-    }
-}
-
-function setupEventListeners() {
-    const textInput = document.getElementById('text-input');
+// ── CHAT UI LOGIC ─────────────────────────────────────────────────────────
+function initChatUI() {
     const sendBtn = document.getElementById('send-btn');
-    const cameraBtn = document.getElementById('camera-btn');
+    const textInput = document.getElementById('text-input');
     const micBtn = document.getElementById('mic-btn');
 
-    textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
-    sendBtn.addEventListener('click', sendMessage);
-    cameraBtn.addEventListener('click', toggleCamera);
-    micBtn.addEventListener('click', toggleMicrophone);
-
-    // ── Code Panel Toggle ───────────────────────────────────────────────────
-    const codeBtn = document.getElementById('code-toggle-btn');
-    const closeCodeBtn = document.getElementById('close-code-panel');
-    const codePanel = document.getElementById('code-panel');
-
-    if (codeBtn && codePanel) {
-        codeBtn.addEventListener('click', () => {
-            const currentRight = window.getComputedStyle(codePanel).right;
-            const isOpen = currentRight === '0px';
-            codePanel.style.right = isOpen ? '-45%' : '0px';
-            if (!isOpen) {
-                _showNotification("Coding Workspace Opened", "#6c5ce7");
-                if (!editor) initMonaco();
-            }
+    if (sendBtn && textInput) {
+        sendBtn.addEventListener('click', sendMessage);
+        textInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
         });
     }
-    if (closeCodeBtn && codePanel) {
-        closeCodeBtn.addEventListener('click', () => { codePanel.style.right = '-45%'; });
+
+    if (micBtn) {
+        micBtn.addEventListener('click', toggleMicrophone);
     }
 
     // New Chat Clear
@@ -312,7 +139,8 @@ function initInterviewUI() {
     const interviewOverlay = document.getElementById('interview-overlay');
     const cancelBtn = document.getElementById('cancel-interview-btn');
     const launchBtn = document.getElementById('launch-interview-btn');
-    const companyCards = document.querySelectorAll('.company-card');
+    
+    // Resume logic
     const uploadDashBtn = document.getElementById('upload-resume-dash-btn');
     const resumeInput = document.getElementById('resume-upload');
 
@@ -320,41 +148,95 @@ function initInterviewUI() {
         modeCb.addEventListener('change', () => {
             const isInterview = modeCb.checked;
             modeIcon.textContent = isInterview ? '👔' : '🏠';
-            updateUILayout(isInterview);
+            const modeText = document.getElementById('mode-text');
+            if (modeText) modeText.textContent = isInterview ? 'Interview Mode' : 'Home Mode';
             
             if (isInterview) {
                 interviewOverlay.style.display = 'flex';
                 requestAnimationFrame(() => interviewOverlay.style.opacity = '1');
             } else {
+                currentInterviewMeta.mode = 'normal';
                 interviewOverlay.style.opacity = '0';
                 setTimeout(() => interviewOverlay.style.display = 'none', 500);
             }
         });
     }
 
+    // Camera Toggle Logic
+    const cameraBtn = document.getElementById('camera-btn');
+    if (cameraBtn) {
+        cameraBtn.addEventListener('click', toggleCamera);
+    }
+
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
             modeCb.checked = false;
-            modeCb.dispatchEvent(new Event('change'));
-        });
-    }
-
-    if (launchBtn) {
-        launchBtn.addEventListener('click', () => {
             interviewOverlay.style.opacity = '0';
             setTimeout(() => interviewOverlay.style.display = 'none', 500);
-            _showNotification(`Entering ${selectedCompany} Mock`, "#00ff88");
-            triggerInterviewStart();
+            modeIcon.textContent = '🏠';
+            const modeText = document.getElementById('mode-text');
+            if (modeText) modeText.textContent = 'Home Mode';
+            currentInterviewMeta.mode = 'normal';
+            // Reset AURA back to standing idle
+            if (avatar) {
+                avatar.defaultIdleAnimation = 'idle';
+                avatar.setIdleAnimation('idle');
+                avatar.setEnvironmentMode(false); // Hide desk/chair
+            }
         });
     }
 
-    companyCards.forEach(card => {
-        card.addEventListener('click', () => {
-            companyCards.forEach(c => c.classList.remove('active'));
-            card.classList.add('active');
-            selectedCompany = card.getAttribute('data-value');
+    // MAIN INTERVIEW START HANDLER
+    if (launchBtn) {
+        launchBtn.addEventListener('click', async () => {
+            const company = document.getElementById('setup-company').value;
+            const domain = document.getElementById('setup-domain').value;
+            const level = document.getElementById('setup-level').value;
+            
+            // 1. Apply voice selection from Dashboard
+            const voiceVal = document.getElementById('setup-voice')?.value || 'en-com';
+            const [lang, tld] = voiceVal.split('-');
+            try {
+                await fetch('/api/set-voice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lang, tld })
+                });
+            } catch(e) { console.error("Could not set voice", e); }
+
+            // 2. Update Global Metadata
+            currentInterviewMeta = {
+                mode: 'interview',
+                level,
+                company,
+                domain
+            };
+
+            // 3. Hide Dashboard & Sync UI (Fade duration reduced for snapiness)
+            interviewOverlay.style.opacity = '0';
+            setTimeout(() => {
+                interviewOverlay.style.display = 'none';
+                _showNotification(`Interview Mode: ${company} – ${domain}`, '#88ccff');
+
+                // 4. AURA sits down (starts instantly)
+                if (avatar) {
+                    avatar.defaultIdleAnimation = 'sitting';
+                    avatar.setIdleAnimation('sitting');
+                    avatar.setEnvironmentMode(true); 
+                }
+
+                // 5. Parallel initialization: Camera + AI Start
+                if (!isCameraActive) {
+                    toggleCamera().catch(e => log(`Camera Error: ${e.message}`));
+                }
+
+                // 6. Start conversation IMMEDIATELY with Fast-Path [SYSTEM] tag
+                clearChat();
+                // We use [SYSTEM:] so brain.py skips pre-processing and memory recall for the intro
+                sendMessage(`[SYSTEM: Start a ${level}-level mock interview for ${domain} at ${company}. Keep it professional and concise.]`);
+            }, 100);
         });
-    });
+    }
 
     if (uploadDashBtn && resumeInput) {
         uploadDashBtn.addEventListener('click', () => resumeInput.click());
@@ -372,6 +254,142 @@ function initInterviewUI() {
     }
 }
 
+// ── MICROPHONE LOGIC ──────────────────────────────────────────────────────
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+
+async function toggleMicrophone() {
+    const micBtn = document.getElementById('mic-btn');
+    
+    if (isRecording) {
+        log('Stopping recording...');
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isRecording = false;
+        micBtn.innerHTML = '🎤';
+        return;
+    }
+
+    if (!acquireInputLock('voice')) return;
+
+    try {
+        log('Starting microphone capture...');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
+
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+
+        mediaRecorder.onstop = async () => {
+            const recordedMime = mediaRecorder.mimeType || 'audio/webm';
+            log(`Recording finished. Mime: ${recordedMime}`);
+            const blob = new Blob(recordedChunks, { type: recordedMime });
+            
+            // CRITICAL: Stop the tracks so the mic isn't held open
+            stream.getTracks().forEach(track => track.stop());
+            
+            if (blob.size < 1000) {
+                log("Blob too small, skipping.");
+                micBtn.innerHTML = '🎤';
+                releaseInputLock();
+                return;
+            }
+
+            log(`Sending audio blob (${(blob.size / 1024).toFixed(1)} KB) to server...`);
+            _showNotification("Processing Voice...", "#00ff88");
+            
+            const meta = currentInterviewMeta; // Use the actual current meta
+            const formData = new FormData();
+            formData.append('file', blob, `voice_input.${recordedMime.split('/')[1] || 'webm'}`);
+            formData.append('mode', meta.mode);
+            formData.append('level', meta.level);
+            formData.append('company', meta.company);
+            formData.append('domain', meta.domain);
+            formData.append('gesture', 'none');
+            formData.append('face_emotion', getFaceEmotion());
+
+            try {
+                const res = await fetch('/api/voice-chat', { method: 'POST', body: formData });
+                const data = await res.json();
+                handleResponse(data);
+            } catch (err) { 
+                console.error("Voice Chat Error:", err);
+            } finally {
+                micBtn.innerHTML = '🎤';
+                releaseInputLock();
+                isRecording = false;
+            }
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.style.color = '#ff4757';
+        micBtn.classList.add('recording-active');
+        micBtn.innerHTML = '🔴 <span style="font-size:10px;margin-left:4px;">REC</span>';
+        _showNotification("Listening...", "#ff4757");
+
+    } catch (err) {
+        log(`Mic Error: ${err.message}`);
+        _showNotification("Microphone Access Denied", "#e74c3c");
+        releaseInputLock();
+    }
+}
+
+// ── VOICE SELECTION LOGIC ──────────────────────────────────────────────────
+function initVoiceSelector() {
+    const voiceBtn = document.getElementById('voice-settings-btn');
+    const voiceDropdown = document.getElementById('voice-dropdown');
+    
+    if (!voiceBtn || !voiceDropdown) return;
+
+    console.log("[Voice] Initializing voice selector UI...");
+
+    // 1. Toggle dropdown
+    voiceBtn.addEventListener('click', (e) => {
+        log("[Voice] Button clicked");
+        e.preventDefault();
+        e.stopPropagation();
+        const isOpen = voiceDropdown.style.display === 'flex';
+        voiceDropdown.style.display = isOpen ? 'none' : 'flex';
+    });
+
+    // 2. Close on outside click
+    document.addEventListener('click', () => { voiceDropdown.style.display = 'none'; });
+
+    // 3. Fetch and populate voices (from API)
+    fetch('/api/voices')
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success' && data.voices) {
+                voiceDropdown.innerHTML = '';
+                data.voices.forEach(voice => {
+                    const item = document.createElement('div');
+                    item.className = 'voice-item';
+                    if (voice.tld === 'com' && voice.lang === 'en') item.classList.add('active'); // Default
+                    item.textContent = voice.name;
+                    item.onclick = async () => {
+                        console.log("[Voice] Selected:", voice.name);
+                        document.querySelectorAll('.voice-item').forEach(v => v.classList.remove('active'));
+                        item.classList.add('active');
+                        
+                        try {
+                            await fetch('/api/set-voice', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ lang: voice.lang, tld: voice.tld })
+                            });
+                            _showNotification(`Voice changed to ${voice.name}`, "#00ff88");
+                        } catch(e) {}
+                    };
+                    voiceDropdown.appendChild(item);
+                });
+            }
+        });
+}
+
+// ── CORE CHAT ACTIONS ─────────────────────────────────────────────────────
 async function handleResumeUpload() {
     const resumeInput = document.getElementById('resume-upload');
     if (resumeInput.files.length === 0) return;
@@ -387,45 +405,18 @@ async function handleResumeUpload() {
     resumeInput.value = '';
 }
 
-function getInterviewMetadata() {
-    return {
-        mode: document.getElementById('mode-cb')?.checked ? "interview" : "normal",
-        level: document.getElementById('level-select-dashboard')?.value || "mid",
-        company: selectedCompany || "General",
-        domain: document.getElementById('domain-select-dashboard')?.value || "Software Engineer"
-    };
-}
-
-async function triggerInterviewStart() {
-    if (!acquireInputLock('text')) return;
-    const meta = getInterviewMetadata();
-    try {
-        const response = await fetch('/api/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                text: `I want to start a mock interview for a ${meta.level}-level ${meta.domain} position at ${meta.company}.`,
-                mode: meta.mode,
-                level: meta.level,
-                company: meta.company,
-                domain: meta.domain
-            })
-        });
-        const data = await response.json();
-        handleResponse(data);
-    } catch (e) { releaseInputLock(); }
-}
-
-async function sendMessage() {
+async function sendMessage(textOverride = null) {
     const input = document.getElementById('text-input');
-    const rawText = input.value.trim();
+    const rawText = textOverride || input.value.trim();
     if (!rawText || _inputLocked) return;
     if (!acquireInputLock('text')) return;
 
-    addMessage(rawText, 'user');
-    input.value = '';
+    if (!textOverride) {
+        addMessage(rawText, 'user');
+        input.value = '';
+    }
 
-    const meta = getInterviewMetadata();
+    const meta = currentInterviewMeta;
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
@@ -436,7 +427,7 @@ async function sendMessage() {
                 level: meta.level,
                 company: meta.company,
                 domain: meta.domain,
-                code: editor ? editor.getValue() : ""
+                face_emotion: getFaceEmotion()
             })
         });
         const data = await response.json();
@@ -444,158 +435,470 @@ async function sendMessage() {
     } catch (e) { releaseInputLock(); }
 }
 
+// ── LIP SYNC STATE ────────────────────────────────────────────────────
+let _lipSyncRAF = null;    // requestAnimationFrame ID
+let _audioCtx = null;      // shared AudioContext
+let _analyser = null;      // AnalyserNode
+
+function _stopLipSync() {
+    if (_lipSyncRAF) { cancelAnimationFrame(_lipSyncRAF); _lipSyncRAF = null; }
+    // Gently close the jaw
+    if (avatar && typeof avatar.updateFace === 'function') {
+        avatar.updateFace({ jawOpen: 0 });
+    }
+}
+
+function _startLipSync(audioEl) {
+    _stopLipSync(); // Cancel any previous
+
+    try {
+        // Reuse or create AudioContext
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+
+        const source = _audioCtx.createMediaElementSource(audioEl);
+        _analyser = _audioCtx.createAnalyser();
+        _analyser.fftSize = 256;
+        _analyser.smoothingTimeConstant = 0.7;
+
+        // Route: source → both speakers (priority) and analyser (for mouth)
+        // This ensures the audio is always heard even if the analyser is delayed
+        source.connect(_audioCtx.destination); 
+        source.connect(_analyser);
+
+        const dataArr = new Uint8Array(_analyser.frequencyBinCount);
+
+        function tick() {
+            if (!avatar || !_analyser) return;
+
+            // NEW: If ACE blendshape animation is active, stop overriding it with fallback volume-based jaw movement
+            if (avatar.faceAnimationActive) {
+                _lipSyncRAF = requestAnimationFrame(tick);
+                return;
+            }
+
+            _analyser.getByteFrequencyData(dataArr);
+            // Average volume of speech-relevant frequencies (300Hz–3kHz = bins ~4 to ~35)
+            let sum = 0;
+            const start = 4, end = Math.min(35, dataArr.length);
+            for (let i = start; i < end; i++) sum += dataArr[i];
+            const avg = sum / (end - start);
+
+            // Map 0–128 → 0–0.85 with smoothing
+            const jaw = Math.min(0.85, (avg / 128) * 1.4);
+
+            if (typeof avatar.updateFace === 'function') {
+                avatar.updateFace({ jawOpen: jaw, mouthOpen: jaw * 0.6 });
+            }
+
+            _lipSyncRAF = requestAnimationFrame(tick);
+        }
+
+        _lipSyncRAF = requestAnimationFrame(tick);
+    } catch (e) {
+        console.warn('[LipSync] Could not start audio analysis:', e.message);
+    }
+}
+
 function handleResponse(data) {
     if (!data || !data.text) { releaseInputLock(); return; }
     addMessage(data.text, 'aura');
     if (avatar && data.emotion) avatar.showEmotion(data.emotion);
-    
-    // Play Face Animation (Lip Sync) if present
-    if (avatar && data.face_animation) {
-        if (typeof avatar.playFaceAnimation === 'function') {
-            avatar.playFaceAnimation(data.face_animation);
-        } else {
-            console.warn("[AURA] playFaceAnimation method not found on avatar. Check avatar.js version.");
-        }
-    }
-    
-    // Play sound if present (assuming speak endpoint or base64)
+
+    // Face animation trigger moved inside audio.onplay below for synchronization
+
     if (data.audio_url) {
         try {
             const audio = new Audio(data.audio_url);
+            audio.crossOrigin = 'anonymous'; // required for AudioContext tap
             window.currentAudio = audio;
-            const speed = document.getElementById('tts-speed')?.value || 1.0;
+            const speed = parseFloat(document.getElementById('tts-speed')?.value) || 1.0;
             audio.playbackRate = speed;
-            audio.onended = () => {
-                console.log("[AURA] Audio playback finished.");
-                releaseInputLock();
-            };
-            audio.play().catch(err => {
-                console.error("[AURA] Audio playback failed:", err);
-                releaseInputLock();
+            audio.volume = 1.0; // Ensure loud audio
+
+            audio.addEventListener('play', () => {
+                _startLipSync(audio);
+                // NEW: Trigger high-fidelity ACE animation if available
+                if (avatar && data.face_animation) {
+                    avatar.playFaceAnimation(data.face_animation);
+                }
             });
-            if (avatar) avatar.setTalking(true);
-        } catch (err) {
-            console.error("[AURA] Error creating Audio object:", err);
-            releaseInputLock();
-        }
+            audio.addEventListener('ended', () => { _stopLipSync(); releaseInputLock(); });
+            audio.addEventListener('pause', () => _stopLipSync());
+            audio.addEventListener('error', () => { _stopLipSync(); releaseInputLock(); });
+
+            audio.play().catch(err => { _stopLipSync(); releaseInputLock(); });
+        } catch (e) { _stopLipSync(); releaseInputLock(); }
     } else {
         releaseInputLock();
     }
 }
 
 function addMessage(text, role) {
-    const container = document.getElementById('chat-history');
-    const div = document.createElement('div');
-    div.className = `chat-bubble ${role}`;
-    div.textContent = text;
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    const chatHistory = document.getElementById('chat-history');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${role}-message`;
+    msgDiv.textContent = text;
+    chatHistory.appendChild(msgDiv);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
-// Camera & Mic logic
+function clearChat() {
+    document.getElementById('chat-history').innerHTML = '';
+}
+
+/** Safe accessor for face emotion — never throws ReferenceError */
+function getFaceEmotion() {
+    try { return window.faceDetector ? window.faceDetector.dominant : 'neutral'; }
+    catch(e) { return 'neutral'; }
+}
+
+// ── CODE EDITOR (Monaco) ──────────────────────────────────────────────────
+let monacoEditor = null;
+let monacoReady = false;
+
+function initCodeEditor() {
+    const codeBtn = document.getElementById('code-toggle-btn');
+    const codeOverlay = document.getElementById('code-overlay');
+    const closeBtn = document.getElementById('close-code-btn');
+    const runBtn = document.getElementById('run-code-btn');
+    const sendBtn = document.getElementById('send-code-btn');
+    const langSelect = document.getElementById('editor-lang');
+
+    if (codeBtn && codeOverlay) {
+        codeBtn.addEventListener('click', () => {
+            codeOverlay.style.display = 'flex';
+            // Init Monaco on first open
+            if (!monacoReady) {
+                initMonaco();
+            }
+        });
+    }
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            codeOverlay.style.display = 'none';
+        });
+    }
+    if (runBtn) {
+        runBtn.addEventListener('click', runEditorCode);
+    }
+    if (sendBtn) {
+        sendBtn.addEventListener('click', sendCodeToAura);
+    }
+    if (langSelect) {
+        langSelect.addEventListener('change', () => {
+            if (monacoEditor) {
+                const model = monacoEditor.getModel();
+                if (model) monaco.editor.setModelLanguage(model, langSelect.value);
+            }
+        });
+    }
+}
+
+function initMonaco() {
+    if (typeof require === 'undefined' || !require.config) {
+        document.getElementById('code-output').innerHTML = '<span style="color:#e74c3c;">Monaco loader not found. Check your internet connection.</span>';
+        return;
+    }
+    require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } });
+    require(['vs/editor/editor.main'], function () {
+        monacoEditor = monaco.editor.create(document.getElementById('editor-container'), {
+            value: '# Write your code here\n',
+            language: 'python',
+            theme: 'vs-dark',
+            fontSize: 14,
+            minimap: { enabled: false },
+            automaticLayout: true,
+            scrollBeyondLastLine: false,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            lineNumbers: 'on',
+            padding: { top: 12 }
+        });
+        monacoReady = true;
+        log('Monaco Editor initialized');
+    });
+}
+
+function runEditorCode() {
+    const outputEl = document.getElementById('code-output');
+    if (!monacoEditor) { outputEl.innerHTML = '<span style="color:#e74c3c;">Editor not ready yet.</span>'; return; }
+    const code = monacoEditor.getValue();
+    const lang = document.getElementById('editor-lang').value;
+    outputEl.innerHTML = `<span style="color:#a29bfe;">▶ Running ${lang}...</span><br>`;
+
+    // JavaScript can run locally in browser
+    if (lang === 'javascript') {
+        try {
+            const logs = [];
+            const origLog = console.log;
+            console.log = (...args) => logs.push(args.join(' '));
+            // eslint-disable-next-line no-eval
+            eval(code);
+            console.log = origLog;
+            outputEl.innerHTML += logs.map(l => `<span style="color:#00ff88;">${escHtml(l)}</span>`).join('<br>') || '<span style="color:#888;">No output.</span>';
+        } catch(e) {
+            outputEl.innerHTML += `<span style="color:#e74c3c;">Error: ${escHtml(e.message)}</span>`;
+        }
+    } else {
+        outputEl.innerHTML += `<span style="color:#fdcb6e;">⚠ ${lang} requires a backend runner. Use ↑ Send to AURA for feedback instead.</span>`;
+    }
+}
+
+async function sendCodeToAura() {
+    if (!monacoEditor) { _showNotification('Editor not ready', '#e74c3c'); return; }
+    const code = monacoEditor.getValue();
+    const lang = document.getElementById('editor-lang')?.value || 'python';
+    const codeOverlay = document.getElementById('code-overlay');
+    codeOverlay.style.display = 'none'; // Close overlay
+    sendMessage(null, `Please review this ${lang} code:\n\`\`\`${lang}\n${code}\n\`\`\``);
+}
+
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── CAMERA & FACE TRACKING ───────────────────────────────────────────────
+let isCameraActive = false;
+let cameraStream = null;
+let modelsLoaded = false;
+
+async function loadFaceApiModels() {
+    if (modelsLoaded) return true;
+    _showNotification("Loading Face Models...", "#6c5ce7");
+    try {
+        const MODEL_URL = '/face-models'; // Served by server.py from assets/face-models
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+        ]);
+        modelsLoaded = true;
+        log("Face Models Loaded");
+        return true;
+    } catch (e) {
+        console.error("Failed to load face models:", e);
+        // Try fallback to unpkg/cdn if local fails
+        try {
+            const CDN_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(CDN_URL),
+                faceapi.nets.faceLandmark68TinyNet.loadFromUri(CDN_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(CDN_URL)
+            ]);
+            modelsLoaded = true;
+            return true;
+        } catch (ee) {
+            _showNotification("Models Load Failed", "#e74c3c");
+            return false;
+        }
+    }
+}
+
 async function toggleCamera() {
-    const video = document.getElementById('user-camera');
+    const video = document.getElementById('webcam-video');         // hidden — for detection
+    const previewVideo = document.getElementById('cam-preview-video'); // visible — user sees self
+    const previewWrapper = document.getElementById('cam-preview-wrapper');
+    const camBtn = document.getElementById('camera-btn');
     const dot = document.getElementById('face-status-dot');
     const statusText = document.querySelector('#face-status span:last-child');
 
-    if (video.classList.contains('hidden')) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            video.srcObject = stream;
-            video.classList.remove('hidden');
-            if (dot) dot.style.background = '#00ff88';
-            if (statusText) statusText.textContent = 'Live • Tracking';
-            _showNotification("Camera Enabled", "#00ff88");
-        } catch (e) {
-            log(`Camera Error: ${e.message}`);
-            _showNotification("Camera Access Denied", "#f44336");
+    if (isCameraActive) {
+        // ── Stop Camera ──
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
         }
-    } else {
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(t => t.stop());
-            video.srcObject = null;
+        if (window.faceDetector) window.faceDetector.stop();
+        video.srcObject = null;
+        if (previewVideo) previewVideo.srcObject = null;
+        if (previewWrapper) previewWrapper.style.display = 'none';
+        isCameraActive = false;
+        camBtn.classList.remove('active');
+        dot.style.background = '#888';
+        statusText.textContent = 'Camera Off';
+        _showNotification('Camera Disabled', '#888');
+        return;
+    }
+
+    // ── Start Camera ──
+    if (!await loadFaceApiModels()) return;
+
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
+        // Feed to hidden detection video
+        video.srcObject = cameraStream;
+
+        // Feed to visible preview
+        if (previewVideo) {
+            previewVideo.srcObject = cameraStream;
         }
-        video.classList.add('hidden');
-        if (dot) dot.style.background = '#888';
-        if (statusText) statusText.textContent = 'Camera Off';
-        _showNotification("Camera Disabled", "#888");
+        if (previewWrapper) {
+            previewWrapper.style.display = 'flex';
+        }
+
+        isCameraActive = true;
+        camBtn.classList.add('active');
+
+        if (window.faceDetector) {
+            // Wait for video to be ready before starting detection
+            if (video.readyState >= 2) {
+                window.faceDetector.start(video);
+                log('[Camera] Face detector started immediately (video ready)');
+            } else {
+                video.addEventListener('loadeddata', () => {
+                    window.faceDetector.start(video);
+                    log('[Camera] Face detector started after video loaded');
+                }, { once: true });
+            }
+        }
+
+        _showNotification('Camera Active — you can see yourself!', '#00ff88');
+        dot.style.background = '#00ff88';
+        statusText.textContent = 'Live • Detecting...';
+    } catch (err) {
+        console.error('Camera error:', err);
+        _showNotification('Camera Denied — check browser permissions', '#e74c3c');
     }
 }
 
-async function toggleMicrophone() {
-    const micBtn = document.getElementById('mic-btn');
-    if (isRecording) {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
+function initFaceDetector() {
+    // Use window.faceDetector — set by face_emotion.js before main.js runs
+    if (!window.faceDetector) return;
+    const fd = window.faceDetector;
+    const dot = document.getElementById('face-status-dot');
+    const statusText = document.querySelector('#face-status span:last-child');
+
+    // Wire the close button on the cam preview
+    const camCloseBtn = document.getElementById('cam-close-btn');
+    if (camCloseBtn) {
+        camCloseBtn.addEventListener('click', () => {
+            const wrapper = document.getElementById('cam-preview-wrapper');
+            if (wrapper) wrapper.style.display = 'none';
+        });
+    }
+
+    fd.onEmotion((emotion, confidence) => {
+        // Update status pill
+        if (dot && statusText) {
+            const colorMap = { neutral: '#00ff88', happy: '#f1c40f', sad: '#3498db', angry: '#e74c3c', surprised: '#9b59b6' };
+            dot.style.background = colorMap[emotion] || '#00ff88';
+            statusText.textContent = `Live • ${emotion.toUpperCase()} (${(confidence * 100).toFixed(0)}%)`;
         }
-        isRecording = false;
-        micBtn.style.color = 'white';
-        micBtn.style.boxShadow = 'none';
-        micBtn.classList.remove('recording-active');
-        _showNotification("Recording Stopped", "#6c5ce7");
-    } else {
+        // Mirror user emotion on AURA's face subtly
+        if (avatar && emotion !== 'neutral') {
+            avatar.showEmotion(emotion);
+        }
+        // Update label inside the preview window
+        const emotionLabel = document.getElementById('cam-emotion-label');
+        const glowRing = document.getElementById('cam-glow-ring');
+        if (emotionLabel) {
+            const emojiMap = { happy: '😊', sad: '😢', angry: '😠', surprised: '😲', neutral: '😐', fear: '😨', disgust: '🤢' };
+            const colorMap2 = { neutral: '#00ff88', happy: '#f1c40f', sad: '#74b9ff', angry: '#e74c3c', surprised: '#a29bfe', fear: '#fd79a8', disgust: '#55efc4' };
+            const emoji = emojiMap[emotion] || '😐';
+            const col = colorMap2[emotion] || '#00ff88';
+            emotionLabel.textContent = `${emoji} ${emotion.toUpperCase()}`;
+            emotionLabel.style.color = col;
+            if (glowRing) glowRing.style.borderColor = col.replace(')', ', 0.7)').replace('rgb', 'rgba');
+        }
+
+        // --- NEW: Emotion Feedback during interview ---
+        // Lowered threshold to 0.4 for better reactivity
+        if (currentInterviewMeta.mode === 'interview' && confidence > 0.4) {
+            triggerEmotionComment(emotion);
+        }
+    });
+
+    // Also link the debug callback to stop the "DETECTING..." initial freeze 
+    if (fd && typeof fd.onDebug === 'function') {
+        fd.onDebug((dom) => {
+            const label = document.getElementById('cam-emotion-label');
+            if (label && label.textContent === 'DETECTING...') {
+                label.textContent = `😐 ${dom.toUpperCase()}`;
+            }
+        });
+    }
+
+    // Interviewer Logic: Reactive feedback when looking away
+    fd.onHeadTurn((dir) => {
+        if (currentInterviewMeta.mode === 'interview') {
+            log(`Interviewer: Head turn detected (${dir})`);
+            triggerAttentionWarning();
+        }
+    });
+
+    fd.onInattention(() => {
+        if (currentInterviewMeta.mode === 'interview') {
+            log('Interviewer: Inattention detected');
+            triggerAttentionWarning();
+        }
+    });
+}
+
+// Throttle attention warnings so AURA doesn't spam
+let _lastAttentionTime = 0;
+const ATTENTION_COOLDOWN_MS = 15000; // 15s minimum between warnings
+
+const _ATTENTION_PHRASES = [
+    "Hey, eyes on me please. This is a real interview — focus matters.",
+    "I noticed you looked away. In a real interview that's a red flag. Let's stay focused.",
+    "Please maintain eye contact — it shows confidence and engagement.",
+    "Are you still with me? Let's keep our attention on the interview.",
+    "I see you got distracted. Take a breath and let's continue.",
+];
+
+function triggerAttentionWarning() {
+    const now = Date.now();
+    if (now - _lastAttentionTime < ATTENTION_COOLDOWN_MS) return; 
+    
+    const phrase = _ATTENTION_PHRASES[Math.floor(Math.random() * _ATTENTION_PHRASES.length)];
+    const msg = `[SYSTEM: The user is distracted. Briefly call their attention back naturally. Example: "${phrase}"]`;
+    
+    if (_inputLocked) {
+        _pendingSystemMessage = msg; // Queue it
+        return;
+    }
+    
+    _lastAttentionTime = now;
+    if (avatar && avatar.currentEmotion === 'neutral') avatar.showEmotion('thinking', 0.5, true);
+    sendMessage(null, msg);
+}
+
+const EMOTION_COOLDOWN_MS = 20000; // 20s 
+
+function triggerEmotionComment(emotion) {
+    if (emotion === 'neutral') return;
+    const now = Date.now();
+    if (now - _lastEmotionCommentTime < EMOTION_COOLDOWN_MS) return;
+    
+    const phrases = {
+        happy: "You seem quite happy! Is there a positive takeaway here?",
+        sad: "You look momentarily concerned. Don't worry, take your time with the answer.",
+        angry: "Keep your cool, focus on the problem at hand.",
+        surprised: "A bit of a surprise? Just explain how you'd tackle it.",
+        fear: "Deep breath. You're handling the technical bits well.",
+        disgust: "Don't get discouraged. Let's look at the next part."
+    };
+    
+    if (phrases[emotion]) {
+        const msg = `[SYSTEM: The user looks ${emotion}. Acknowledge this naturally as a professional interviewer. For example: "${phrases[emotion]}"]`;
         if (_inputLocked) {
-            _showNotification("AURA is still thinking...", "#ff4757");
+            _pendingSystemMessage = msg; // Queue it
             return;
         }
-        if (!acquireInputLock('voice')) return;
-
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            recordedChunks = [];
-
-            mediaRecorder.ondataavailable = e => {
-                if (e.data.size > 0) recordedChunks.push(e.data);
-            };
-
-            mediaRecorder.onstop = async () => {
-                micBtn.style.color = 'white';
-                micBtn.classList.remove('recording-active');
-                
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                if (blob.size < 1000) { // filter out accidental clicks
-                    releaseInputLock();
-                    return;
-                }
-
-                _showNotification("Processing Voice...", "#00ff88");
-                const formData = new FormData();
-                formData.append('audio', blob);
-
-                try {
-                    const res = await fetch('/api/voice-chat', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    handleResponse(data);
-                } catch (err) {
-                    log(`Voice Upload Error: ${err.message}`);
-                    releaseInputLock();
-                }
-            };
-
-            mediaRecorder.start();
-            isRecording = true;
-            micBtn.style.color = '#ff4757';
-            micBtn.classList.add('recording-active');
-            _showNotification("Listening...", "#ff4757");
-        } catch (e) {
-            log(`Mic Error: ${e.message}`);
-            _showNotification("Microphone Access Denied", "#f44336");
-            releaseInputLock();
-        }
+        _lastEmotionCommentTime = now;
+        sendMessage(null, msg);
     }
 }
 
-function filterBadWords(t) { return t; } 
-function stopFaceSync() {} 
-
-function updateUILayout(isInterview) {
-    const newChatBtn = document.getElementById('new-chat-btn');
-    const voiceBtn = document.querySelector('.voice-control-wrapper');
-    if (newChatBtn) {
-        newChatBtn.style.display = isInterview ? 'none' : 'flex';
-    }
-    if (voiceBtn) {
-        voiceBtn.style.display = isInterview ? 'none' : 'block';
-    }
+/**
+ * Legacy alias kept for compatibility
+ */
+async function triggerInterviewerReaction(text) {
+    const now = Date.now();
+    if (now - _lastAttentionTime < ATTENTION_COOLDOWN_MS) return;
+    if (_inputLocked) return;
+    _lastAttentionTime = now;
+    sendMessage(null, `[SYSTEM: As the interviewer, say this naturally: "${text}"]`);
+    if (avatar) avatar.playAnimation('talking', true);
 }

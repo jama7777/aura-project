@@ -1,11 +1,5 @@
-import * as THREE from 'three';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
-export class Avatar {
+// AURA AVATAR SYSTEM - GLOBAL SCRIPT VERSION
+class AuraAvatar {
     constructor() {
         this.scene = null;
         this.camera = null;
@@ -60,6 +54,7 @@ export class Avatar {
         // Dynamic 3D Environment Setup
         this.createStarfield();
         this.createPlanet();
+        this.createOfficeEnvironment(); // Desk and chair
 
         // Camera - position for a centered portrait view
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
@@ -76,19 +71,6 @@ export class Avatar {
         dirLight.castShadow = true;
         this.scene.add(dirLight);
 
-        // Ground/Grid removed for Space Environment
-        /*
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false }));
-        mesh.rotation.x = - Math.PI / 2;
-        mesh.receiveShadow = true;
-        this.scene.add(mesh);
-
-        const grid = new THREE.GridHelper(2000, 20, 0x000000, 0x000000);
-        grid.material.opacity = 0.2;
-        grid.material.transparent = true;
-        this.scene.add(grid);
-        */
-
         // Renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -97,7 +79,7 @@ export class Avatar {
         container.appendChild(this.renderer.domElement);
 
         // Controls - LOCKED for a cinematic fixed view
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
         this.controls.target.set(0, 0, 0); // Focus on avatar center
         this.controls.enableRotate = false; // Locked
         this.controls.enableZoom = false;   // Locked
@@ -280,15 +262,13 @@ export class Avatar {
         };
 
         if (extension === 'fbx') {
-            const loader = new FBXLoader(manager);
+            const loader = new THREE.FBXLoader(manager);
             loader.load(url, onLoaded, undefined, (err) => this.log("Error loading FBX: " + err));
         } else if (extension === 'glb') {
-            const loader = new GLTFLoader(manager);
+            const loader = new THREE.GLTFLoader(manager);
             loader.load(url, onLoaded, undefined, (err) => this.log("Error loading GLB: " + err));
         } else {
-            // OBJ
-            const loader = new OBJLoader(manager);
-            loader.load(url, onLoaded, undefined, (err) => this.log("Error loading OBJ: " + err));
+            // OBJ fallback handled differently if needed
         }
     }
 
@@ -313,7 +293,7 @@ export class Avatar {
         }, 60000);
 
         // Load Ready Player Me Avatar (GLB with ARKit blendshapes for lip sync)
-        const gltfLoader = new GLTFLoader(loadingManager);
+        const gltfLoader = new THREE.GLTFLoader(loadingManager);
         const modelUrl = `/assets/models/rpm_avatar.glb`;
 
         this.log(`Loading GLB Model: ${modelUrl}`);
@@ -395,46 +375,7 @@ export class Avatar {
             },
             (error) => {
                 this.log(`Error loading GLB: ${error}`);
-                this.log("Falling back to OBJ model...");
-                this.loadOBJFallback(loadingManager);
             });
-    }
-
-    loadOBJFallback(loadingManager) {
-        const objLoader = new OBJLoader(loadingManager);
-        const mtlLoader = new MTLLoader(loadingManager);
-        const modelUrl = `/assets/models/character.obj`;
-        const mtlUrl = `/assets/models/character.mtl`;
-
-        this.log(`Loading OBJ Model: ${modelUrl}`);
-
-        mtlLoader.load(mtlUrl, (materials) => {
-            materials.preload();
-            objLoader.setMaterials(materials);
-            objLoader.load(modelUrl, (object) => {
-                this.log("OBJ Model loaded (no morph targets).");
-                this.mixer = new THREE.AnimationMixer(object);
-
-                const box = new THREE.Box3().setFromObject(object);
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                if (maxDim > 0) {
-                    const targetScale = 150 / maxDim;
-                    object.scale.set(targetScale, targetScale, targetScale);
-                }
-                object.position.y = -75;
-
-                object.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                    }
-                });
-
-                this.scene.add(object);
-                this.model = object;
-            });
-        });
     }
 
     createStarfield() {
@@ -481,6 +422,80 @@ export class Avatar {
         this.scene.add(atmos);
     }
 
+    createOfficeEnvironment() {
+        // --- 1. THE DESK ---
+        const deskGroup = new THREE.Group();
+        this.desk = deskGroup;
+        
+        // Desk Top (Glass/High-tech surface)
+        const topGeom = new THREE.BoxGeometry(350, 8, 120);
+        const topMat = new THREE.MeshPhongMaterial({ 
+            color: 0x111122, 
+            transparent: true, 
+            opacity: 0.8,
+            shininess: 100,
+            specular: 0x5555ff 
+        });
+        const top = new THREE.Mesh(topGeom, topMat);
+        top.position.y = -5; // Height relative to sitting avatar
+        top.position.z = 40; // Front of avatar
+        deskGroup.add(top);
+
+        // Desk "Legs" / Base (Cyberpunk style pillars)
+        const baseGeom = new THREE.CylinderGeometry(5, 15, 80, 4);
+        const baseMat = new THREE.MeshPhongMaterial({ color: 0x050510 });
+        
+        const leg1 = new THREE.Mesh(baseGeom, baseMat);
+        leg1.position.set(-140, -45, 40);
+        deskGroup.add(leg1);
+        
+        const leg2 = new THREE.Mesh(baseGeom, baseMat);
+        leg2.position.set(140, -45, 40);
+        deskGroup.add(leg2);
+
+        // Neon Trim
+        const neonGeom = new THREE.BoxGeometry(352, 1, 1);
+        const neonMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+        const neon = new THREE.Mesh(neonGeom, neonMat);
+        neon.position.set(0, -2, 100);
+        deskGroup.add(neon);
+
+        this.scene.add(deskGroup);
+        deskGroup.visible = false; // Start hidden
+
+        // --- 2. THE CHAIR ---
+        const chairGroup = new THREE.Group();
+        this.chair = chairGroup;
+
+        // Seat
+        const seatGeom = new THREE.BoxGeometry(80, 10, 80);
+        const seatMat = new THREE.MeshPhongMaterial({ color: 0x222233 });
+        const seat = new THREE.Mesh(seatGeom, seatMat);
+        seat.position.y = -55;
+        chairGroup.add(seat);
+
+        // Backrest
+        const backGeom = new THREE.BoxGeometry(80, 100, 10);
+        const back = new THREE.Mesh(backGeom, seatMat);
+        back.position.set(0, -10, -40);
+        chairGroup.add(back);
+
+        this.scene.add(chairGroup);
+        chairGroup.visible = false; // Start hidden
+    }
+
+    setEnvironmentMode(isInterview) {
+        if (this.desk) this.desk.visible = isInterview;
+        if (this.chair) this.chair.visible = isInterview;
+        
+        // Adjust camera slightly for sitting
+        if (isInterview) {
+            this.camera.position.set(0, 15, 250); // Punch in a bit
+        } else {
+            this.camera.position.set(0, 10, 300); // Normal view
+        }
+    }
+
     loadFBXAnimations() {
         // ── Mixamo animations (high-quality rigged clips) ────────────────────
         const animationMap = {
@@ -490,6 +505,10 @@ export class Avatar {
             'walk_turn2':    'Catwalk Walk Turn 180 Tight-2.fbx',
             'jog':           'Jog In Circle.fbx',
             'talking':       'Talking.fbx',
+
+            // ── Interview / Sitting ──────────────────────────────────────────
+            'sitting':       'Sitting_interview_position@1.fbx',
+            'sitting_laugh': 'Sitting Laughing.fbx',
 
             // ── Happy / Excited ──────────────────────────────────────────────
             'happy':         'Happy.fbx',
@@ -511,11 +530,9 @@ export class Avatar {
 
             // ── Jump / Surprise ──────────────────────────────────────────────
             'jump':          'Jumping Down.fbx',
-
-            // (CMU Mo-Cap animations removed. We use only high-quality Mixamo clips.)
         };
 
-        const fbxLoader = new FBXLoader();
+        const fbxLoader = new THREE.FBXLoader();
         let loadedCount = 0;
         let attemptCount = 0;
         const totalAnimations = Object.keys(animationMap).length;
@@ -531,15 +548,7 @@ export class Avatar {
                 if (this.animations[this.defaultIdleAnimation]) {
                     this.playAnimation(this.defaultIdleAnimation);
                 } else if (this.animations['idle']) {
-                    this.defaultIdleAnimation = 'idle';
                     this.playAnimation('idle');
-                } else {
-                    // Fallback to whatever first animation loaded, if nothing else exists
-                    const fallback = Object.keys(this.animations)[0];
-                    if (fallback) {
-                        this.defaultIdleAnimation = fallback;
-                        this.playAnimation(fallback);
-                    }
                 }
             }
         };
@@ -567,9 +576,7 @@ export class Avatar {
                     attemptCount++;
                     checkStartupState();
                 },
-                (progress) => {
-                    // Progress callback
-                },
+                (progress) => {},
                 (error) => {
                     this.log(`❌ Error loading: ${animName} from ${fileName}`);
                     attemptCount++;
@@ -839,10 +846,13 @@ export class Avatar {
                 let match = this.findMorphTarget(name);
 
                 if (match !== null) {
-                    const index = this.morphTargetDictionary[match];
                     this.faceMeshes.forEach(mesh => {
-                        if (mesh.morphTargetInfluences.length > index) {
-                            mesh.morphTargetInfluences[index] = value;
+                        const dict = mesh.morphTargetDictionary;
+                        if (dict && match in dict) {
+                            const index = dict[match];
+                            if (mesh.morphTargetInfluences.length > index) {
+                                mesh.morphTargetInfluences[index] = value;
+                            }
                         }
                     });
                 }
@@ -886,21 +896,12 @@ export class Avatar {
     }
 
     findMorphTarget(aceName) {
-        // Direct match first
-        if (aceName in this.morphTargetDictionary) return aceName;
-
-        // NVIDIA ACE uses ARKit standard naming
-        // Ready Player Me uses similar but sometimes different naming
-        // This mapping ensures maximum compatibility
-
+        // Mapping from ACE names to standard RPM / ARKit names
         const aceToRpmMap = {
-            // Jaw
             'jawOpen': 'jawOpen',
             'jawForward': 'jawForward',
             'jawLeft': 'jawLeft',
             'jawRight': 'jawRight',
-
-            // Mouth - Primary lip sync shapes
             'mouthClose': 'mouthClose',
             'mouthFunnel': 'mouthFunnel',
             'mouthPucker': 'mouthPucker',
@@ -914,86 +915,32 @@ export class Avatar {
             'mouthFrownRight': 'mouthFrownRight',
             'mouthFrown_L': 'mouthFrownLeft',
             'mouthFrown_R': 'mouthFrownRight',
-            'mouthDimpleLeft': 'mouthDimpleLeft',
-            'mouthDimpleRight': 'mouthDimpleRight',
-            'mouthStretchLeft': 'mouthStretchLeft',
-            'mouthStretchRight': 'mouthStretchRight',
             'mouthRollLower': 'mouthRollLower',
             'mouthRollUpper': 'mouthRollUpper',
             'mouthShrugLower': 'mouthShrugLower',
             'mouthShrugUpper': 'mouthShrugUpper',
-            'mouthPressLeft': 'mouthPressLeft',
-            'mouthPressRight': 'mouthPressRight',
-            'mouthPress_L': 'mouthPressLeft',
-            'mouthPress_R': 'mouthPressRight',
             'mouthLowerDownLeft': 'mouthLowerDownLeft',
             'mouthLowerDownRight': 'mouthLowerDownRight',
-            'mouthUpperUpLeft': 'mouthUpperUpLeft',
-            'mouthUpperUpRight': 'mouthUpperUpRight',
-
-            // Cheeks
-            'cheekPuff': 'cheekPuff',
-            'cheekSquintLeft': 'cheekSquintLeft',
-            'cheekSquintRight': 'cheekSquintRight',
-            'cheekSquint_L': 'cheekSquintLeft',
-            'cheekSquint_R': 'cheekSquintRight',
-
-            // Nose
-            'noseSneerLeft': 'noseSneerLeft',
-            'noseSneerRight': 'noseSneerRight',
-            'noseSneer_L': 'noseSneerLeft',
-            'noseSneer_R': 'noseSneerRight',
-
-            // Tongue
-            'tongueOut': 'tongueOut',
-
-            // Eyes (for emotion blending)
             'eyeBlinkLeft': 'eyeBlinkLeft',
             'eyeBlinkRight': 'eyeBlinkRight',
             'eyeBlink_L': 'eyeBlinkLeft',
             'eyeBlink_R': 'eyeBlinkRight',
-            'eyeWideLeft': 'eyeWideLeft',
-            'eyeWideRight': 'eyeWideRight',
-            'eyeWide_L': 'eyeWideLeft',
-            'eyeWide_R': 'eyeWideRight',
-            'eyeSquintLeft': 'eyeSquintLeft',
-            'eyeSquintRight': 'eyeSquintRight',
-            'eyeSquint_L': 'eyeSquintLeft',
-            'eyeSquint_R': 'eyeSquintRight',
-
-            // Brows (for expression)
+            'cheekPuff': 'cheekPuff',
             'browDownLeft': 'browDownLeft',
             'browDownRight': 'browDownRight',
-            'browDown_L': 'browDownLeft',
-            'browDown_R': 'browDownRight',
             'browInnerUp': 'browInnerUp',
             'browOuterUpLeft': 'browOuterUpLeft',
-            'browOuterUpRight': 'browOuterUpRight',
-            'browOuterUp_L': 'browOuterUpLeft',
-            'browOuterUp_R': 'browOuterUpRight'
+            'browOuterUpRight': 'browOuterUpRight'
         };
 
-        // Check mapped name
-        if (aceToRpmMap[aceName] && aceToRpmMap[aceName] in this.morphTargetDictionary) {
-            return aceToRpmMap[aceName];
-        }
+        const mapped = aceToRpmMap[aceName];
+        if (mapped) return mapped;
 
-        // Case-insensitive match
-        const lowerName = aceName.toLowerCase();
-        for (const key in this.morphTargetDictionary) {
-            if (key.toLowerCase() === lowerName) return key;
-        }
+        // Try _L/_R to Left/Right conversion (common for ARKit models)
+        if (aceName.endsWith("_L")) return aceName.replace("_L", "Left");
+        if (aceName.endsWith("_R")) return aceName.replace("_R", "Right");
 
-        // Try _L/_R to Left/Right conversion
-        let mapped = aceName.replace("_L", "Left").replace("_R", "Right");
-        if (mapped in this.morphTargetDictionary) return mapped;
-
-        // Try casing on mapped
-        for (const key in this.morphTargetDictionary) {
-            if (key.toLowerCase() === mapped.toLowerCase()) return key;
-        }
-
-        return null; // No match found
+        return aceName;
     }
 
     applyEmotionModifiers(emotion, blendshapes) {
@@ -1786,5 +1733,58 @@ export class Avatar {
             }
         };
         this._eyeIdleFrame = requestAnimationFrame(shiftStep);
+    }
+
+    /**
+     * Updates the avatar's lip sync (jaw/mouth) values in real-time.
+     * Incorporates smoothing (Physics LERP) for more natural results.
+     */
+    updateFace(targets) {
+        if (!this.model || !this.faceMesh) return;
+        
+        // --- 1. SMOOTHING (LERP for Muscle Simulation) ---
+        // Prevents robotic jittering by interpolating values
+        this._lastJawVal = this._lastJawVal || 0;
+        this._lastMouthVal = this._lastMouthVal || 0;
+        
+        // Inputs (from audio volume)
+        const targetJaw = targets.jawOpen || 0;
+        const targetMouth = targets.mouthOpen || 0;
+        
+        // Smoothing constant (0.1 = slower/heavy, 0.5 = snappy, 1.0 = instant/robotic)
+        const SMOOTH = 0.42; 
+        this._lastJawVal = THREE.MathUtils.lerp(this._lastJawVal, targetJaw, SMOOTH);
+        this._lastMouthVal = THREE.MathUtils.lerp(this._lastMouthVal, targetMouth, SMOOTH);
+
+        // --- 2. FUZZY TARGET MAPPING ---
+        // Map common "jawOpen" and "mouthOpen" to whatever the model uses
+        const activeTargets = {
+            'jawOpen': this._lastJawVal,
+            'mouthOpen': this._lastMouthVal * 0.75, // mouth usually expands less than jaw drops
+            'mouthSmile': targets.smile || 0
+        };
+
+        // If the avatar has multiple face meshes (e.g. eyes, teeth, skin), apply to all
+        const meshesToUpdate = this.faceMeshes || [this.faceMesh];
+        
+        meshesToUpdate.forEach(mesh => {
+            const dict = mesh.morphTargetDictionary;
+            const influ = mesh.morphTargetInfluences;
+            if (!dict || !influ) return;
+
+            // Fuzzy application for maximum model compatibility
+            Object.entries(activeTargets).forEach(([key, val]) => {
+                const lowerKey = key.toLowerCase();
+                for (const dictKey in dict) {
+                    const lowerDictKey = dictKey.toLowerCase();
+                    // Match "jawOpen" with "jawOpen", "Jaw_Open", "vrc_jaw_open", etc.
+                    if (lowerDictKey === lowerKey || 
+                        lowerDictKey === lowerKey.replace('open', '') ||
+                        lowerDictKey.includes(lowerKey)) {
+                        influ[dict[dictKey]] = val;
+                    }
+                }
+            });
+        });
     }
 }
