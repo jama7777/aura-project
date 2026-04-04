@@ -15,6 +15,8 @@ class SimpleFaceDetector {
         this.lastFaceTime = Date.now();
         this.headTurnStart = 0;
         this.headTurnFired = false;
+        this.headTurnThreshold = 12; // pixels - lower = faster detection
+        this.headTurnDelay = 500; // ms - reduced from 800 for faster response
     }
 
     async init(videoElement) {
@@ -122,9 +124,9 @@ class SimpleFaceDetector {
             console.error('[Face] Error:', e);
         }
 
-        // Next frame
+        // Next frame - faster (100ms)
         if (this.isRunning) {
-            setTimeout(() => this.detect(), 200);
+            setTimeout(() => this.detect(), 100);
         }
     }
 
@@ -160,7 +162,8 @@ class SimpleFaceDetector {
         
         // Asymmetry - if one eye is much closer, head is turned
         const diff = Math.abs(leftDist - rightDist);
-        const threshold = 15; // pixels
+        const threshold = this.headTurnThreshold; // 12 pixels - fast detection
+        const delay = this.headTurnDelay; // 500ms - instant response
         
         const now = Date.now();
         
@@ -169,8 +172,8 @@ class SimpleFaceDetector {
             
             if (!this.headTurnStart) {
                 this.headTurnStart = now;
-            } else if (now - this.headTurnStart > 800 && !this.headTurnFired) {
-                console.log('[Face] Head turn:', direction);
+            } else if (now - this.headTurnStart > delay && !this.headTurnFired) {
+                console.log('[Face] Head turn:', direction, 'diff:', diff);
                 this.headTurnFired = true;
                 if (this.onHeadTurn) this.onHeadTurn(direction);
             }
