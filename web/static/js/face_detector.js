@@ -20,17 +20,33 @@ class SimpleFaceDetector {
     async init(videoElement) {
         this.video = videoElement;
         
-        // Load models from CDN
-        const CDN = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
-        console.log('[Face] Loading models from:', CDN);
+        // Load models from CDN - try different CDN if one fails
+        const cdns = [
+            'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model',
+            'https://unpkg.com/@vladmandic/face-api/model'
+        ];
         
-        await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(CDN),
-            faceapi.nets.faceLandmark68TinyNet.loadFromUri(CDN),
-            faceapi.nets.faceExpressionNet.loadFromUri(CDN)
-        ]);
+        let loaded = false;
+        for (const cdn of cdns) {
+            try {
+                console.log('[Face] Trying CDN:', cdn);
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(cdn),
+                    faceapi.nets.faceLandmark68TinyNet.loadFromUri(cdn),
+                    faceapi.nets.faceExpressionNet.loadFromUri(cdn)
+                ]);
+                console.log('[Face] SUCCESS - Models loaded from:', cdn);
+                loaded = true;
+                break;
+            } catch (e) {
+                console.log('[Face] Failed:', cdn, e.message);
+            }
+        }
         
-        console.log('[Face] Models loaded!');
+        if (!loaded) {
+            throw new Error('Could not load face-api models from any CDN');
+        }
+        
         return true;
     }
 
@@ -41,13 +57,29 @@ class SimpleFaceDetector {
         this.detect();
     }
 
+    scheduleNext() {
+        if (this.isRunning) {
+            setTimeout(() => this.detect(), 200);
+        }
+    }
+
     stop() {
         this.isRunning = false;
         console.log('[Face] Stopped');
     }
 
     async detect() {
-        if (!this.isRunning || !this.video) return;
+        if (!this.isRunning || !this.video) {
+            console.log('[Face] Not running or no video');
+            return;
+        }
+
+        // Check if video is ready
+        if (!this.video.videoWidth || !this.video.videoHeight) {
+            console.log('[Face] Video not ready:', this.video.videoWidth, this.video.videoHeight);
+            this.scheduleNext();
+            return;
+        }
 
         try {
             // Small video for performance
