@@ -14,14 +14,14 @@ const WIN_THRESHOLD = 0.22;  // min % of window votes to accept dominant emotion
 const STABLE_MS = 550;   // ms emotion must hold before firing onEmotion
 
 // Head-turn detection thresholds
-// 0.28 = only fires on STRONG turns (e.g. looking far left/right away from screen).
-// 0.40 was too sensitive and fired when user was just slightly angled.
-const HEAD_TURN_RATIO = 0.28;  // lower = less sensitive (stronger turn needed)
-const HEAD_TURN_MS   = 1500;   // must hold turn 1.5s before callback fires
+// Lower threshold = more sensitive (catches smaller turns)
+const HEAD_TURN_RATIO = 0.35;  // was 0.28, increased for better detection
+const HEAD_TURN_MS   = 1000;   // was 1500, faster detection (1s)
 
 // ─── FaceEmotionDetector ──────────────────────────────────────────────────────
 class FaceEmotionDetector {
     constructor() {
+        console.log('[FaceEmotion v5.1] Constructor called');
         this._timer = null;
         this._history = [];        // string[] of winning labels per frame
         this._scores = {};        // latest raw scores from face-api
@@ -93,11 +93,21 @@ class FaceEmotionDetector {
      * face-api.js nets must already be loaded by main.js before calling this.
      */
     start(videoElement) {
+        console.log('[FaceEmotion v5.1] Start called with video:', videoElement);
         this._video = videoElement;
         this.ready = true;
         this._stableStart = Date.now();
         this._lastFaceSeen = Date.now();
+        console.log('[FaceEmotion v5.1] Scheduling first detection...');
         this._schedule();
+        
+        // Log to server for debugging
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: '[DEBUG] Face detector started', source: 'face-detector' })
+        }).catch(() => {});
+        
         console.log('[FaceEmotion v5] Detector started');
     }
 
@@ -121,18 +131,24 @@ class FaceEmotionDetector {
     }
 
     async _detect() {
-        if (!this.ready || !this._video) return;
+        if (!this.ready || !this._video) {
+            console.log('[FaceEmotion v5.1] Not ready or no video');
+            return;
+        }
 
         const v = this._video;
         if (v.paused || v.ended || v.readyState < 2) {
+            console.log('[FaceEmotion v5.1] Video not ready:', { paused: v.paused, ended: v.ended, readyState: v.readyState });
             this._schedule();
             return;
         }
 
+        console.log('[FaceEmotion v5.1] Attempting face detection...');
+
         try {
             const opts = new faceapi.TinyFaceDetectorOptions({
-                inputSize: 416,     // Increased from 320 for better detection
-                scoreThreshold: 0.15 // Lowered from 0.25 for better sensitivity
+                inputSize: 416,
+                scoreThreshold: 0.10  // Lowered from 0.15 for better detection
             });
 
             // v4.1: If landmarker model failed to load, we skip it and just do expressions.
@@ -225,6 +241,8 @@ class FaceEmotionDetector {
 
         // Determine if head is turned
         let turnDir = null;
+        console.log('[FaceAPI] Head turn check:', { leftRatio: leftRatio.toFixed(3), rightRatio: rightRatio.toFixed(3), threshold: HEAD_TURN_RATIO });
+        
         if (rightRatio < HEAD_TURN_RATIO) {
             // Right eye is very close to nose → head turned RIGHT
             turnDir = 'right';

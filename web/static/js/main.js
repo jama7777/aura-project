@@ -8,7 +8,7 @@ let currentInterviewMeta = { mode: 'normal', level: 'mid', company: 'General', d
 let selectedCompany = 'General';
 let _inputLocked = false;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // 1. Initialize Avatar
     if (typeof AuraAvatar === 'function') {
         avatar = new AuraAvatar('canvas-container');
@@ -19,7 +19,22 @@ document.addEventListener('DOMContentLoaded', () => {
     initChatUI();
     initInterviewUI();
     initVoiceSelector();
-    initFaceDetector();
+    
+    // Wait for face-api.js to load before initializing detector
+    if (typeof faceapi !== 'undefined') {
+        console.log('[Init] faceapi detected, initializing detector');
+        initFaceDetector();
+    } else {
+        console.log('[Init] faceapi not loaded yet, waiting...');
+        const checkFaceAPI = setInterval(() => {
+            if (typeof faceapi !== 'undefined') {
+                clearInterval(checkFaceAPI);
+                console.log('[Init] faceapi now loaded, initializing detector');
+                initFaceDetector();
+            }
+        }, 500);
+    }
+    
     initCodeEditor();
     
     // Auto-resume audio on any interaction to prevent browser silencing
@@ -456,30 +471,41 @@ function _stopLipSync() {
 
 function _startLipSync(audioEl) {
     _stopLipSync(); // Cancel any previous
+    
+    console.log('[LipSync] Starting lip sync with audio element');
 
     try {
         // Reuse or create AudioContext
-        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        if (!_audioCtx) {
+            console.log('[LipSync] Creating new AudioContext');
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (_audioCtx.state === 'suspended') {
+            console.log('[LipSync] Resuming suspended AudioContext');
+            _audioCtx.resume();
+        }
+        
+        console.log('[LipSync] AudioContext state:', _audioCtx.state);
 
         const source = _audioCtx.createMediaElementSource(audioEl);
         _analyser = _audioCtx.createAnalyser();
         _analyser.fftSize = 256;
         _analyser.smoothingTimeConstant = 0.7;
 
+        console.log('[LipSync] Created analyser, connecting source...');
+        
         // Route: source → both speakers (priority) and analyser (for mouth)
         // This ensures the audio is always heard even if the analyser is delayed
         source.connect(_audioCtx.destination); 
         source.connect(_analyser);
+        
+        console.log('[LipSync] Connected! Starting animation loop');
 
         const dataArr = new Uint8Array(_analyser.frequencyBinCount);
 
         function tick() {
-            if (!avatar || !_analyser) return;
-
-            // NEW: If ACE blendshape animation is active, stop overriding it with fallback volume-based jaw movement
-            if (avatar.faceAnimationActive) {
-                _lipSyncRAF = requestAnimationFrame(tick);
+            if (!avatar || !_analyser) {
+                console.log('[LipSync] No avatar or analyser');
                 return;
             }
 
@@ -492,7 +518,28 @@ function _startLipSync(audioEl) {
 
             // Map 0–128 → 0–0.85 with smoothing
             const jaw = Math.min(0.85, (avg / 128) * 1.4);
-
+            
+            // VISIBLE LIP SYNC - make the avatar bounce up and down when speaking
+            if (avatar.model) {
+                // Save base position on first frame
+                if (!avatar.model.userData.baseY) {
+                    avatar.model.userData.baseY = avatar.model.position.y;
+                }
+                const baseY = avatar.model.userData.baseY;
+                const bounce = jaw * 0.15; // Much more visible bounce (15cm)
+                avatar.model.position.y = baseY + bounce;
+                
+                // Also tilt head slightly - MORE VISIBLE
+                if (avatar.headBone) {
+                    avatar.headBone.rotation.x = jaw * 0.3; // More rotation
+                }
+                // If no head bone, rotate the whole model slightly
+                else if (avatar.model.rotation) {
+                    avatar.model.rotation.x = jaw * 0.05;
+                }
+            }
+            
+            // Also call updateFace for morph targets
             if (typeof avatar.updateFace === 'function') {
                 avatar.updateFace({ jawOpen: jaw, mouthOpen: jaw * 0.6 });
             }
@@ -507,9 +554,13 @@ function _startLipSync(audioEl) {
 }
 
 function handleResponse(data) {
+    console.log('[Response] data:', JSON.stringify(data).substring(0, 200));
     if (!data || !data.text) { releaseInputLock(); return; }
     addMessage(data.text, 'aura');
-    if (avatar && data.emotion) avatar.showEmotion(data.emotion);
+    if (avatar && data.emotion) {
+        console.log('[Response] Showing emotion:', data.emotion);
+        avatar.showEmotion(data.emotion);
+    }
 
     // Face animation trigger moved inside audio.onplay below for synchronization
 
@@ -573,8 +624,20 @@ function clearChat() {
 
 /** Safe accessor for face emotion — never throws ReferenceError */
 function getFaceEmotion() {
-    try { return window.faceDetector ? window.faceDetector.dominant : 'neutral'; }
-    catch(e) { return 'neutral'; }
+    try { 
+        const detector = window.faceDetector;
+        if (!detector) {
+            console.log('[Face] No detector yet');
+            return 'neutral';
+        }
+        const emo = detector.dominant;
+        console.log('[Face] getFaceEmotion:', emo, '| scores:', detector._scores);
+        return emo || 'neutral'; 
+    }
+    catch(e) { 
+        console.log('[Face] Error:', e.message);
+        return 'neutral'; 
+    }
 }
 
 // ── CODE EDITOR (Monaco) ──────────────────────────────────────────────────
@@ -689,29 +752,38 @@ let modelsLoaded = false;
 async function loadFaceApiModels() {
     if (modelsLoaded) return true;
     _showNotification("Loading Face Models...", "#6c5ce7");
+    
+    // Load from CDN directly (more reliable)
     try {
-        const MODEL_URL = '/face-models'; // Served by server.py from assets/face-models
+        const CDN_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+        console.log('[FaceAPI] Loading from CDN:', CDN_URL);
         await Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
-            faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+            faceapi.nets.tinyFaceDetector.loadFromUri(CDN_URL),
+            faceapi.nets.faceLandmark68TinyNet.loadFromUri(CDN_URL),
+            faceapi.nets.faceExpressionNet.loadFromUri(CDN_URL)
         ]);
         modelsLoaded = true;
         log("Face Models Loaded");
+        console.log('[FaceAPI] CDN models loaded successfully');
+        _showNotification("Face Models Ready!", "#00ff88");
         return true;
     } catch (e) {
-        console.error("Failed to load face models:", e);
-        // Try fallback to unpkg/cdn if local fails
+        console.error('[FaceAPI] CDN load failed:', e);
+        
+        // Try local fallback
         try {
-            const CDN_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+            const MODEL_URL = '/face-models';
+            console.log('[FaceAPI] Trying local:', MODEL_URL);
             await Promise.all([
-                faceapi.nets.tinyFaceDetector.loadFromUri(CDN_URL),
-                faceapi.nets.faceLandmark68TinyNet.loadFromUri(CDN_URL),
-                faceapi.nets.faceExpressionNet.loadFromUri(CDN_URL)
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+                faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
             ]);
             modelsLoaded = true;
+            log("Face Models Loaded (local)");
             return true;
         } catch (ee) {
+            console.error('[FaceAPI] Local also failed:', ee);
             _showNotification("Models Load Failed", "#e74c3c");
             return false;
         }
@@ -719,6 +791,7 @@ async function loadFaceApiModels() {
 }
 
 async function toggleCamera() {
+    console.log('[Camera] toggleCamera called');
     const video = document.getElementById('webcam-video');         // hidden — for detection
     const previewVideo = document.getElementById('cam-preview-video'); // visible — user sees self
     const previewWrapper = document.getElementById('cam-preview-wrapper');
@@ -728,11 +801,15 @@ async function toggleCamera() {
 
     if (isCameraActive) {
         // ── Stop Camera ──
+        console.log('[Camera] Stopping...');
         if (cameraStream) {
             cameraStream.getTracks().forEach(track => track.stop());
             cameraStream = null;
         }
-        if (window.faceDetector) window.faceDetector.stop();
+        if (window.faceDetector) {
+            console.log('[Camera] Stopping detector');
+            window.faceDetector.stop();
+        }
         video.srcObject = null;
         if (previewVideo) previewVideo.srcObject = null;
         if (previewWrapper) previewWrapper.style.display = 'none';
@@ -745,10 +822,18 @@ async function toggleCamera() {
     }
 
     // ── Start Camera ──
-    if (!await loadFaceApiModels()) return;
+    console.log('[Camera] Using simpleFaceDetector...');
+
+    if (!window.simpleFaceDetector) {
+        console.error('[Camera] simpleFaceDetector not loaded!');
+        _showNotification('Face detector not loaded', '#e74c3c');
+        return;
+    }
 
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        console.log('[Camera] Requesting camera access...');
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+        console.log('[Camera] Got stream:', cameraStream.id);
 
         // Feed to hidden detection video
         video.srcObject = cameraStream;
@@ -764,20 +849,40 @@ async function toggleCamera() {
         isCameraActive = true;
         camBtn.classList.add('active');
 
-        if (window.faceDetector) {
-            // Wait for video to be ready before starting detection
-            if (video.readyState >= 2) {
-                window.faceDetector.start(video);
-                log('[Camera] Face detector started immediately (video ready)');
-            } else {
-                video.addEventListener('loadeddata', () => {
-                    window.faceDetector.start(video);
-                    log('[Camera] Face detector started after video loaded');
-                }, { once: true });
+        // Setup callbacks before starting
+        window.simpleFaceDetector.onFaceDetected = (emotion, confidence) => {
+            console.log('[Camera] Emotion:', emotion, confidence.toFixed(2));
+            const dot = document.getElementById('face-status-dot');
+            const statusText = document.querySelector('#face-status span:last-child');
+            if (dot && statusText) {
+                dot.style.background = '#00ff88';
+                statusText.textContent = `Live • ${emotion.toUpperCase()}`;
             }
-        }
+            
+            // Mirror to avatar
+            if (avatar && typeof avatar.showEmotion === 'function') {
+                avatar.showEmotion(emotion);
+            }
+        };
+        
+        window.simpleFaceDetector.onHeadTurn = (direction) => {
+            console.log('[Camera] HEAD TURN:', direction);
+            log(`⚠️ Head turn detected (${direction}) - Pay attention!`);
+            triggerAttentionWarning();
+        };
+        
+        window.simpleFaceDetector.onNoFace = () => {
+            console.log('[Camera] No face!');
+            triggerAttentionWarning();
+        };
+        
+        // Start detection
+        await window.simpleFaceDetector.init(video);
+        window.simpleFaceDetector.start();
+        
+        console.log('[Camera] Detector started!');
 
-        _showNotification('Camera Active — you can see yourself!', '#00ff88');
+        _showNotification('Camera Active!', '#00ff88');
         dot.style.background = '#00ff88';
         statusText.textContent = 'Live • Detecting...';
     } catch (err) {
@@ -787,9 +892,14 @@ async function toggleCamera() {
 }
 
 function initFaceDetector() {
+    console.log('[initFaceDetector] Running, window.faceDetector:', window.faceDetector);
     // Use window.faceDetector — set by face_emotion.js before main.js runs
-    if (!window.faceDetector) return;
+    if (!window.faceDetector) {
+        console.error('[initFaceDetector] ERROR: window.faceDetector is null!');
+        return;
+    }
     const fd = window.faceDetector;
+    console.log('[initFaceDetector] Setting up callbacks...');
     const dot = document.getElementById('face-status-dot');
     const statusText = document.querySelector('#face-status span:last-child');
 
@@ -803,15 +913,27 @@ function initFaceDetector() {
     }
 
     fd.onEmotion((emotion, confidence) => {
+        console.log('[Face] onEmotion fired:', emotion, 'confidence:', confidence);
+        
         // Update status pill
+        const dot = document.getElementById('face-status-dot');
+        const statusText = document.querySelector('#face-status span:last-child');
+        
         if (dot && statusText) {
             const colorMap = { neutral: '#00ff88', happy: '#f1c40f', sad: '#3498db', angry: '#e74c3c', surprised: '#9b59b6' };
             dot.style.background = colorMap[emotion] || '#00ff88';
             statusText.textContent = `Live • ${emotion.toUpperCase()} (${(confidence * 100).toFixed(0)}%)`;
+            console.log('[Face] Updated status UI');
         }
-        // Mirror user emotion on AURA's face subtly
-        if (avatar && emotion !== 'neutral') {
-            avatar.showEmotion(emotion);
+        
+        // Mirror user emotion on AURA's face
+        if (avatar) {
+            console.log('[Face] Calling avatar.showEmotion:', emotion);
+            if (typeof avatar.showEmotion === 'function') {
+                avatar.showEmotion(emotion);
+            } else {
+                console.log('[Face] avatar.showEmotion not found');
+            }
         }
         // Update label inside the preview window
         const emotionLabel = document.getElementById('cam-emotion-label');
@@ -845,17 +967,15 @@ function initFaceDetector() {
 
     // Interviewer Logic: Reactive feedback when looking away
     fd.onHeadTurn((dir) => {
-        if (currentInterviewMeta.mode === 'interview') {
-            log(`Interviewer: Head turn detected (${dir})`);
-            triggerAttentionWarning();
-        }
+        // Always show attention warning, not just in interview mode
+        log(`⚠️ Head turn detected (${dir}) - Pay attention!`);
+        triggerAttentionWarning();
     });
 
     fd.onInattention(() => {
-        if (currentInterviewMeta.mode === 'interview') {
-            log('Interviewer: Inattention detected');
-            triggerAttentionWarning();
-        }
+        // Always show attention warning, not just in interview mode
+        log('⚠️ Inattention detected - Pay attention!');
+        triggerAttentionWarning();
     });
 }
 
@@ -864,11 +984,11 @@ let _lastAttentionTime = 0;
 const ATTENTION_COOLDOWN_MS = 15000; // 15s minimum between warnings
 
 const _ATTENTION_PHRASES = [
-    "Hey, eyes on me please. This is a real interview — focus matters.",
-    "I noticed you looked away. In a real interview that's a red flag. Let's stay focused.",
-    "Please maintain eye contact — it shows confidence and engagement.",
-    "Are you still with me? Let's keep our attention on the interview.",
-    "I see you got distracted. Take a breath and let's continue.",
+    "Hey, eyes on me please!",
+    "I noticed you looked away. Are you still there?",
+    "Please pay attention!",
+    "Hey! Over here!",
+    "Lost you for a second — welcome back!",
 ];
 
 function triggerAttentionWarning() {
